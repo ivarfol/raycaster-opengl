@@ -2,3 +2,4 @@
 !.gitignore
 !Makefile
 !racast.c
+!ppmparser.c
