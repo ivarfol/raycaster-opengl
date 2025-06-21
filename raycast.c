@@ -15,6 +15,8 @@
 
 #define TEXWIDTH 64
 
+#define PLHEIGHT 32
+
 #define HEIGHT 512
 
 extern float texture[][3];
@@ -37,6 +39,7 @@ float playerX, playerY, playerAngle;
 unsigned int mapX = 8, mapY = 8;
 bool show_map = true;
 float move_direction_v, move_direction_h;
+double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
 
 float angles[RES];
 
@@ -430,6 +433,16 @@ void DDA() {
             glVertex2i(ray * SCALE, hposition);
             glEnd();
             textureY += deltatextureY;
+        }
+        float floor_ray;
+        for (hposition = 0;hposition<HEIGHT - end;hposition++) {
+            floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
+            tex_index = (int)(floor_ray * Sin + playerY)%64 *64 + (int)(floor_ray * Cos + playerX) % 64;
+            glColor3f(texture[tex_index][red], texture[tex_index][green], texture[tex_index][blue]);
+            glPointSize(SCALE);
+            glBegin(GL_POINTS);
+            glVertex2i(ray * SCALE, hposition + end);
+            glEnd();
         }
     }
 }
