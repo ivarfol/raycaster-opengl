@@ -19,8 +19,10 @@
 
 #define HEIGHT 512
 
-extern float texture[][3];
-extern void parse(FILE* fptr);
+float texture_one[64 * 64][3];
+float texture_missing[64 * 64][3];
+
+extern void parse(FILE* fptr, float texture[][3]);
 enum { red, green, blue };
 
 typedef struct {
@@ -40,6 +42,8 @@ unsigned int mapX = 8, mapY = 8;
 bool show_map = true;
 float move_direction_v, move_direction_h;
 double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
+float current_frame = 0.0;
+float delta_frames, last_frame;
 
 float angles[RES];
 
@@ -108,8 +112,8 @@ void drawMap() {
 void movef(int speed, float move_direction, float *positionX, float *positionY, float modifier) {
     door_struct* door;
     door = NULL;
-    float tmpX = *positionX + cos(move_direction) * modifier;
-    float tmpY = *positionY + sin(move_direction) * modifier;
+    float tmpX = *positionX + cos(move_direction) * modifier * delta_frames;
+    float tmpY = *positionY + sin(move_direction) * modifier * delta_frames;
     int tmpYmap = map[((int)tmpY>>6) * mapX + ((int)(*positionX)>>6)];
     int tmpXmap = map[((int)(*positionY)>>6) * mapX + ((int)tmpX>>6)];
     int oldposY = *positionY;
@@ -141,11 +145,11 @@ void check_inputs() {
         move_direction_v = PI;
     }
     if (newkeys.q) {
-        playerAngle -= 0.1;
+        playerAngle -= 0.005 * delta_frames;
         radian_change(&playerAngle);
     }
     if (newkeys.e) {
-        playerAngle += 0.1;
+        playerAngle += 0.005 * delta_frames;
         radian_change(&playerAngle);
     }
     if (newkeys.m && !oldkeys.m)
@@ -159,12 +163,12 @@ void check_inputs() {
         }
         move_direction_h += playerAngle;
         radian_change(&move_direction_h);
-        movef(PLAYER_SPEED, move_direction_h, &playerX, &playerY, 1.0f);
+        movef(PLAYER_SPEED, move_direction_h, &playerX, &playerY, 0.2f);
     }
     else if (move_direction_v >= 0.0) {
         move_direction_v += playerAngle;
         radian_change(&move_direction_v);
-        movef(PLAYER_SPEED, move_direction_v, &playerX, &playerY, 1.0f);
+        movef(PLAYER_SPEED, move_direction_v, &playerX, &playerY, 0.2f);
     }
 
     float rayXH, rayYH, distH, rayXV, rayYV, distV;
@@ -427,7 +431,7 @@ void DDA() {
         int tex_index;
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
-            glColor3f(texture[tex_index][red] * bright, texture[tex_index][green] * bright, texture[tex_index][blue] * bright);
+            glColor3f(texture_one[tex_index][red] * bright, texture_one[tex_index][green] * bright, texture_one[tex_index][blue] * bright);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
@@ -437,11 +441,18 @@ void DDA() {
         float floor_ray;
         for (hposition = 0;hposition<HEIGHT - end;hposition++) {
             floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
-            tex_index = (int)(floor_ray * Sin + playerY)%64 *64 + (int)(floor_ray * Cos + playerX) % 64;
-            glColor3f(texture[tex_index][red], texture[tex_index][green], texture[tex_index][blue]);
+            tex_index = (int)(floor_ray * Sin + playerY) % 64 * 64 + (int)(floor_ray * Cos + playerX) % 64;
+            if (tex_index > 63 * 64)
+                tex_index = 63*64;
+            glColor3f(texture_missing[tex_index][red], texture_missing[tex_index][green], texture_missing[tex_index][blue]);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
+            glEnd();
+            glColor3f(texture_missing[tex_index][red], texture_missing[tex_index][green], texture_missing[tex_index][blue]);
+            glPointSize(SCALE);
+            glBegin(GL_POINTS);
+            glVertex2i(ray * SCALE, start -hposition);
             glEnd();
         }
     }
@@ -453,7 +464,7 @@ void doorf() {
     int doornum;
     for (doornum=0;doornum<DOORN;doornum++) {
         if (door->exte_rate < 0) {
-            door->exte += door->exte_rate;
+            door->exte += door->exte_rate * delta_frames / 15;
             if (door->exte < 0) {
                 door->exte_rate = 0.5;
                 door->exte = 0.0;
@@ -461,9 +472,9 @@ void doorf() {
             }
         }
         else if (door->wait > 0)
-            door->wait -= 1;
+            door->wait -= 1 * delta_frames / 15;
         else if ((((int)playerX)>>6) != door->x || (((int)playerY)>>6) != door->y) {
-            door->exte += door->exte_rate;
+            door->exte += door->exte_rate * delta_frames / 15;
             if (door->exte > 64) {
                 door->exte_rate = 0.0;
                 door->exte = 64.0;
@@ -474,6 +485,10 @@ void doorf() {
 }
 
 void display() {
+    current_frame = glutGet(GLUT_ELAPSED_TIME);
+    delta_frames = current_frame - last_frame;
+    last_frame = glutGet(GLUT_ELAPSED_TIME);
+
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
@@ -536,7 +551,9 @@ void init() {
     playerAngle = 0.0f;
     FILE* fptr;
     fptr = fopen("missing.ppm", "r");
-    parse(fptr);
+    parse(fptr, texture_missing);
+    fptr = fopen("tile.ppm", "r");
+    parse(fptr, texture_one);
     int i;
     float base_angle = 0.5 * PI - SHIFT;
     radian_change(&base_angle);

@@ -4,11 +4,9 @@
 #define WIDTH 64
 #define SEP 0x0A
 
-float texture[HEIGHT * WIDTH][3] = {0};
-
 enum colors { red, green, blue };
 
-void parse(FILE* fptr) {
+void parse(FILE* fptr, float texture[][3]) {
     int c = 0;
     int symbol;
     for (symbol=0;symbol<3;) {
