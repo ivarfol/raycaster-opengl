@@ -401,16 +401,24 @@ void DDA() {
         if (distV <= distH) {
             distH = distV;
             bright = 0.7;
-            if (doorV == NULL)
-                textureX = (int)rayYV % 64;
+            if (doorV == NULL) {
+                if (Cos > 0)
+                    textureX = (int)rayYV % 64;
+                else
+                    textureX = 63 - (int)rayYV % 64;
+            }
             else
-                textureX = -64 + (int)rayYV % 64 + doorV->exte;
+                textureX = -64 + (int)rayYV % 64 + ceil(doorV->exte);
         }
         else {
-            if (doorH == NULL)
-                textureX = (int)rayXH % 64;
+            if (doorH == NULL) {
+                if (Sin < 0)
+                    textureX = (int)rayXH % 64;
+                else
+                    textureX = 63 - (int)rayXH % 64;
+            }
             else
-                textureX = -64 + (int)rayXH % 64 + doorH->exte;
+                textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
         }
         distH *= correct_fish;
         float line_height = (64.0 * HEIGHT) / distH;
