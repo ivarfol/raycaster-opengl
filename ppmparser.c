@@ -1,11 +1,10 @@
 #include <stdio.h>
 
-#define HEIGHT 128
-#define WIDTH 128
-#define SCALE 2
+#define HEIGHT 64
+#define WIDTH 64
 #define SEP 0x0A
 
-int texture[HEIGHT * WIDTH][3] = {0};
+float texture[HEIGHT * WIDTH][3] = {0};
 
 enum colors { red, green, blue };
 
@@ -20,7 +19,7 @@ void parse(FILE* fptr) {
     for (colorn=0;colorn<HEIGHT * WIDTH;colorn++) {
         for (color_part=red;color_part<=blue;color_part++) {
             c = fgetc(fptr);
-            texture[colorn][color_part] = c / 255;
+            texture[colorn][color_part] = c / 255.0;
         }
     }
 }

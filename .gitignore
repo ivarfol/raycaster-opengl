@@ -3,3 +3,6 @@
 !Makefile
 !racast.c
 !ppmparser.c
+!missing.ppm
+!ray
+!ray.exe

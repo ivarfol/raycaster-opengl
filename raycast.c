@@ -13,7 +13,13 @@
 #define DOORN 1
 #define MAP_SCALE 16
 
+#define TEXWIDTH 64
+
 #define HEIGHT 512
+
+extern float texture[][3];
+extern void parse(FILE* fptr);
+enum { red, green, blue };
 
 typedef struct {
     int w, a, s, d, q, e, m, f, space, shift, p;
@@ -37,7 +43,7 @@ float angles[RES];
 short unsigned int map[] =
 {
     1, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 1, 0, 1,
     1, 0, 1, 0, 0, 0, 0, 1,
     1, 3, 1, 0, 0, 1, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
@@ -56,9 +62,7 @@ void radian_change(float *a) {
 }
 
 door_struct* getDoor(int x, int y) {
-    int door_index;
-    for (door_index=0;door_index<DOORN || doors[door_index].x == x && doors[door_index].y == y;door_index++);
-    return(&doors[--door_index]);
+    return(&doors[0]);
 }
 
 void drawMap() {
@@ -288,6 +292,8 @@ void DDA() {
         int raymapXV, raymapYV, raymapV;
         door_struct* doorH;
         door_struct* doorV;
+        doorH = NULL;
+        doorV = NULL;
         while (dofV < DOF || dofH < DOF) {
             if (dofH < DOF && distH <= distV) {
                 raymapXH = (int)(rayXH)>>6;
@@ -295,6 +301,7 @@ void DDA() {
                 raymapH = raymapXH + raymapYH * mapX;
                 if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 1) {
                     dofH = DOF;
+                    doorH = NULL;
                     break;
                 }
                 else if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 3) {
@@ -327,11 +334,12 @@ void DDA() {
                 raymapV = raymapXV + raymapYV * mapX;
                 if (raymapV > 0 && raymapV <mapX * mapY && map[raymapV] == 1) {
                     dofV = DOF;
+                    doorV = NULL;
                     break;
                 }
                 else if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 2) {
-                    doorH = getDoor(raymapXH, raymapYH);
-                    if (doorV->y * 64 - doorV->exte + 64 < rayYV + 0.5 * deltaYV) {
+                    doorV = getDoor(raymapXH, raymapYH);
+                    if (doorV->y * 64 - doorV->exte < rayYV + 0.5 * deltaYV) {
                         dofV = DOF;
                         distV += 0.5 * deltadistV;
                         rayXV += 0.5 * deltaXV;
@@ -379,29 +387,47 @@ void DDA() {
         }
 
 
+        float shade = 1.0;
+        float textureX;
         if (distV <= distH) {
             distH = distV;
-            glColor3f(0.9, 0, 0);
+            shade = 0.7;
+            if (doorV == NULL)
+                textureX = (int)rayYV % 64;
+            else
+                textureX = -64 + (int)rayYV % 64 + doorV->exte;
         }
-        else
-            glColor3f(0.7, 0, 0);
+        else {
+            if (doorH == NULL)
+                textureX = (int)rayXH % 64;
+            else
+                textureX = -64 + (int)rayXH % 64 + doorH->exte;
+        }
         distH *= correct_fish;
-        float line_height = 64 * HEIGHT / distH;
+        float line_height = (64.0 * HEIGHT) / distH;
         int start, end;
+        float deltatextureH = 64.0 / line_height;
+        float offset = 0.0;
         if (line_height > HEIGHT) {
             start = 0;
             end = HEIGHT;
+            offset = (line_height - HEIGHT) / 2.0;
         }
         else {
-            start = HEIGHT / 2 - 0.5 * line_height;
-            end = HEIGHT / 2 + 0.5 * line_height;
+            start = HEIGHT / 2.0 - 0.5 * line_height;
+            end = HEIGHT / 2.0 + 0.5 * line_height;
         }
         int hposition;
+        float textureH = offset * deltatextureH;
+        int tex_index;
         for (hposition=start; hposition<end;hposition++) {
+            tex_index= (int)((int)(textureH) * TEXWIDTH + textureX);
+            glColor3f(texture[tex_index][red] * shade, texture[tex_index][green] * shade, texture[tex_index][blue] * shade);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
             glEnd();
+            textureH += deltatextureH;
         }
     }
 }
@@ -494,6 +520,9 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
+    FILE* fptr;
+    fptr = fopen("missing.ppm", "r");
+    parse(fptr);
     int i;
     float base_angle = 0.5 * PI - SHIFT;
     radian_change(&base_angle);
