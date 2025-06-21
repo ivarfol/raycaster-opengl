@@ -10,7 +10,7 @@
 #define SCALE 4
 #define FOV 0.5 * PI
 #define SHIFT FOV / 2
-#define DOORN 1
+#define DOORN 2
 #define MAP_SCALE 16
 
 #define TEXWIDTH 64
@@ -31,7 +31,7 @@ typedef struct {
     int x, y, wait;
     float exte, exte_rate;
 } door_struct;
-door_struct doors[1];
+door_struct doors[DOORN];
 
 float playerX, playerY, playerAngle;
 unsigned int mapX = 8, mapY = 8;
@@ -40,11 +40,11 @@ float move_direction_v, move_direction_h;
 
 float angles[RES];
 
-short unsigned int map[] =
+int map[] =
 {
     1, 1, 1, 1, 1, 1, 1, 1,
     1, 0, 0, 0, 0, 1, 0, 1,
-    1, 0, 1, 0, 0, 0, 0, 1,
+    1, 0, 1, 0, 0, 2, 0, 1,
     1, 3, 1, 0, 0, 1, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
@@ -62,7 +62,9 @@ void radian_change(float *a) {
 }
 
 door_struct* getDoor(int x, int y) {
-    return(&doors[0]);
+    int i;
+    for (i=0;doors[i].x != x || doors[i].y != y;i++);
+    return(&doors[i]);
 }
 
 void drawMap() {
@@ -105,13 +107,17 @@ void movef(int speed, float move_direction, float *positionX, float *positionY, 
     door = NULL;
     float tmpX = *positionX + cos(move_direction) * modifier;
     float tmpY = *positionY + sin(move_direction) * modifier;
-    int maptmpX = (int)tmpX>>6;
-    int maptmpY = (int)tmpY>>6;
-    if (map[maptmpX + maptmpY * mapX] == 2 || map[maptmpX + maptmpY * mapX] == 3)
-        door = getDoor(maptmpX, maptmpY);
-    if (map[((int)tmpY>>6) * mapX + ((int)(*positionX)>>6)] == 0 || door != NULL && door->exte == 0.0)
+    int tmpYmap = map[((int)tmpY>>6) * mapX + ((int)(*positionX)>>6)];
+    int tmpXmap = map[((int)(*positionY)>>6) * mapX + ((int)tmpX>>6)];
+    int oldposY = *positionY;
+    if (tmpYmap == 3 || tmpYmap == 2)
+        door = getDoor(((int)(*positionX)>>6), ((int)tmpY>>6));
+    if (tmpYmap == 0 || door != NULL && door->exte == 0.0)
         *positionY = tmpY;
-    if (map[((int)(*positionY)>>6) * mapX + ((int)tmpX>>6)] == 0 || door != NULL && door->exte == 0.0)
+    door = NULL;
+    if (tmpXmap == 3 || tmpXmap == 2)
+        door = getDoor(((int)tmpX>>6), ((int)(oldposY)>>6));
+    if (tmpXmap == 0 || door != NULL && door->exte == 0.0)
         *positionX = tmpX;
 }
 
@@ -287,7 +293,6 @@ void DDA() {
             distV = 10000.0f;
             dofV = DOF;
         }
-        //printf("H%f V%f\n", deltadistH, deltadistV);
         int raymapXH, raymapYH, raymapH;
         int raymapXV, raymapYV, raymapV;
         door_struct* doorH;
@@ -305,7 +310,6 @@ void DDA() {
                     break;
                 }
                 else if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 3) {
-                    //printf("%f < %f\n", doors[door_indexH].x * 64 + doors[door_indexH].exte - 34, rayXH + 0.5 * deltaXH);
                     doorH = getDoor(raymapXH, raymapYH);
                     if (doorH->x * 64 - doorH->exte + 64 < rayXH + 0.5 * deltaXH) {
                         dofH = DOF;
@@ -338,8 +342,8 @@ void DDA() {
                     break;
                 }
                 else if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 2) {
-                    doorV = getDoor(raymapXH, raymapYH);
-                    if (doorV->y * 64 - doorV->exte < rayYV + 0.5 * deltaYV) {
+                    doorV = getDoor(raymapXV, raymapYV);
+                    if (doorV->y * 64 - doorV->exte + 64 < rayYV + 0.5 * deltaYV) {
                         dofV = DOF;
                         distV += 0.5 * deltadistV;
                         rayXV += 0.5 * deltaXV;
@@ -360,11 +364,9 @@ void DDA() {
                     dofV++;
                 }
             }
-            else //printf("dofV %d\ndofH %d\ndistV %f\ndistH %f\n", dofV, dofH, distV, distH);
+            else
                 break;
         }
-        //printf("%d %d\n", dofV, dofH);
-        //printf("%d raymapXV %d raymapYV\n%d raymapXH %d raymapYH\n", raymapXV, raymapYV, raymapXH, raymapYH);
 
         if (show_map) {
             drawMap();
@@ -387,11 +389,11 @@ void DDA() {
         }
 
 
-        float shade = 1.0;
+        float bright = 1.0;
         float textureX;
         if (distV <= distH) {
             distH = distV;
-            shade = 0.7;
+            bright = 0.7;
             if (doorV == NULL)
                 textureX = (int)rayYV % 64;
             else
@@ -406,7 +408,7 @@ void DDA() {
         distH *= correct_fish;
         float line_height = (64.0 * HEIGHT) / distH;
         int start, end;
-        float deltatextureH = 64.0 / line_height;
+        float deltatextureY = 64.0 / line_height;
         float offset = 0.0;
         if (line_height > HEIGHT) {
             start = 0;
@@ -418,16 +420,16 @@ void DDA() {
             end = HEIGHT / 2.0 + 0.5 * line_height;
         }
         int hposition;
-        float textureH = offset * deltatextureH;
+        float textureY = offset * deltatextureY;
         int tex_index;
         for (hposition=start; hposition<end;hposition++) {
-            tex_index= (int)((int)(textureH) * TEXWIDTH + textureX);
-            glColor3f(texture[tex_index][red] * shade, texture[tex_index][green] * shade, texture[tex_index][blue] * shade);
+            tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
+            glColor3f(texture[tex_index][red] * bright, texture[tex_index][green] * bright, texture[tex_index][blue] * bright);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
             glEnd();
-            textureH += deltatextureH;
+            textureY += deltatextureY;
         }
     }
 }
@@ -448,7 +450,6 @@ void doorf() {
         else if (door->wait > 0)
             door->wait -= 1;
         else if ((((int)playerX)>>6) != door->x || (((int)playerY)>>6) != door->y) {
-            //printf("%d %d\n", (((int)playerX)>>6), (((int)playerY)>>6));
             door->exte += door->exte_rate;
             if (door->exte > 64) {
                 door->exte_rate = 0.0;
@@ -530,11 +531,16 @@ void init() {
     float side = RES * sin(base_angle) / sin(FOV);
     for (i = 0; i<RES; i++)
         angles[i] = acos((side - i * baseCos) / sqrt(side * side + i * i - 2 * side * i * baseCos));
-    doors[0].x = 1;
-    doors[0].y = 3;
+    doors[0].x = 5;
+    doors[0].y = 2;
     doors[0].exte = 64.0;
     doors[0].exte_rate = 0.0;
     doors[0].wait = 0;
+    doors[1].x = 1;
+    doors[1].y = 3;
+    doors[1].exte = 64.0;
+    doors[1].exte_rate = 0.0;
+    doors[1].wait = 0;
 }
 
 int main(int argc, char* argv[]) {
