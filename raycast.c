@@ -13,6 +13,8 @@
 #define DOORN 2
 #define MAP_SCALE 16
 
+#define MIN_LIGHT_DIST 128
+
 #define TEXWIDTH 64
 
 #define PLHEIGHT 32
@@ -23,6 +25,7 @@ float texture_one[64 * 64][3];
 float texture_missing[64 * 64][3];
 
 extern void parse(FILE* fptr, float texture[][3]);
+extern void mod_brightness(float *r, float *g, float *b, float brightness);
 enum { red, green, blue };
 
 typedef struct {
@@ -227,6 +230,7 @@ void check_inputs() {
 }
 
 void DDA() {
+    float r, g, b;
     int dofH = DOF;
     int dofV = DOF;
     float deltaYV, deltaYH;
@@ -409,6 +413,7 @@ void DDA() {
             }
             else
                 textureX = -64 + (int)rayYV % 64 + ceil(doorV->exte);
+            doorH = doorV;
         }
         else {
             if (doorH == NULL) {
@@ -420,6 +425,9 @@ void DDA() {
             else
                 textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
         }
+        float light_dist = distH;
+        if (light_dist < MIN_LIGHT_DIST)
+            light_dist = MIN_LIGHT_DIST;
         distH *= correct_fish;
         float line_height = (64.0 * HEIGHT) / distH;
         int start, end;
@@ -439,7 +447,18 @@ void DDA() {
         int tex_index;
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
-            glColor3f(texture_one[tex_index][red] * bright, texture_one[tex_index][green] * bright, texture_one[tex_index][blue] * bright);
+            if (doorH == NULL) {
+                r = texture_one[tex_index][red];
+                g = texture_one[tex_index][green];
+                b = texture_one[tex_index][blue];
+            }
+            else {
+                r = texture_missing[tex_index][red];
+                g = texture_missing[tex_index][green];
+                b = texture_missing[tex_index][blue];
+            }
+            mod_brightness(&r, &g, &b, 10000.0 / light_dist / light_dist);
+            glColor3f(r, g, b);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
@@ -449,16 +468,25 @@ void DDA() {
         float floor_ray;
         for (hposition = 0;hposition<HEIGHT - end;hposition++) {
             floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
+            light_dist = floor_ray;
+            if (light_dist < MIN_LIGHT_DIST)
+                light_dist = MIN_LIGHT_DIST;
             tex_index = (int)(floor_ray * Sin + playerY) % 64 * 64 + (int)(floor_ray * Cos + playerX) % 64;
             if (tex_index > 63 * 64)
                 tex_index = 63*64;
-            glColor3f(texture_missing[tex_index][red], texture_missing[tex_index][green], texture_missing[tex_index][blue]);
-            glPointSize(SCALE);
+            r = texture_missing[tex_index][red];
+            g = texture_missing[tex_index][green];
+            b = texture_missing[tex_index][blue];
+            mod_brightness(&r, &g, &b, 10000.0 / light_dist / light_dist);
+            glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
             glEnd();
-            glColor3f(texture_missing[tex_index][red], texture_missing[tex_index][green], texture_missing[tex_index][blue]);
-            glPointSize(SCALE);
+            r = texture_missing[tex_index][red] / 2.0;
+            g = texture_missing[tex_index][green] / 2.0;
+            b = texture_missing[tex_index][blue];
+            mod_brightness(&r, &g, &b, 10000.0 / light_dist / light_dist);
+            glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, start -hposition);
             glEnd();
@@ -584,7 +612,7 @@ void init() {
 int main(int argc, char* argv[]) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(1024, 512);
+    glutInitWindowSize(RES * SCALE, HEIGHT);
     glutCreateWindow("Raycaster");
     init();
     glutDisplayFunc(display);
