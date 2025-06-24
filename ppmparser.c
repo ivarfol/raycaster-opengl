@@ -22,7 +22,7 @@ int stoi(char text[MAXL]) {
     return num;
 }
 
-void parse(FILE* fptr, float texture[][3]) {
+int parse(FILE* fptr, float texture[][3]) {
     int c;
     int line, symbol, depth;
     int Ylength = 0;
@@ -31,6 +31,10 @@ void parse(FILE* fptr, float texture[][3]) {
     for (line=0;line<3;) {
         for (symbol=0;symbol<MAXL;symbol++) {
             c = fgetc(fptr);
+            if (c == EOF) {
+                printf("Unexpected EOF\n");
+                return 1;
+            }
             if (c == '#')
                 break;
             if (c == '\n' || c == ' ') {
@@ -47,20 +51,42 @@ void parse(FILE* fptr, float texture[][3]) {
                     break;
                 }
                 c = fgetc(fptr);
+                if (c == EOF) {
+                    printf("Unexpected EOF\n");
+                    return 1;
+                }
                 symbol = 0;
             }
             text[symbol] = c;
         }
     }
+    if (Xlength != WIDTH || Ylength != HEIGHT) {
+        printf("Incorrect texture size\n");
+        return 1;
+    }
     int colorn, color_part;
     for (colorn=0;colorn<HEIGHT * WIDTH;colorn++) {
         for (color_part=red;color_part<=blue;color_part++) {
             c = fgetc(fptr);
+            if (c == EOF) {
+                printf("Unexpected EOF\n");
+                return 1;
+            }
             if (colorn==0 && c == '#') {
-                while ((c=fgetc(fptr)) != SEP);
+                while ((c=fgetc(fptr)) != SEP) {
+                    if (c == EOF) {
+                        printf("Unexpected EOF\n");
+                        return 1;
+                    }
+                }
                 c = fgetc(fptr);
+                if (c == EOF) {
+                    printf("Unexpected EOF\n");
+                    return 1;
+                }
             }
             texture[colorn][color_part] = c / (float)depth;
         }
     }
+    return 0;
 }

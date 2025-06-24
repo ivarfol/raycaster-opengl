@@ -24,7 +24,7 @@
 float texture_one[64 * 64][3];
 float texture_missing[64 * 64][3];
 
-extern void parse(FILE* fptr, float texture[][3]);
+extern int parse(FILE* fptr, float texture[][3]);
 extern void mod_brightness(float *r, float *g, float *b, float brightness);
 enum { red, green, blue };
 
@@ -585,11 +585,25 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    FILE* fptr;
+    FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
-    parse(fptr, texture_missing);
+    if (fptr != NULL) {
+        if (parse(fptr, texture_missing))
+            exit(1);
+    }
+    else {
+        printf("Failed to open file missing.ppm\n");
+        exit(1);
+    }
     fptr = fopen("tile.ppm", "r");
-    parse(fptr, texture_one);
+    if (fptr != NULL) {
+        if (parse(fptr, texture_one))
+            exit(1);
+    }
+    else {
+        printf("Failed to open file tile.ppm\n");
+        exit(1);
+    }
     int i;
     float base_angle = 0.5 * PI - SHIFT;
     radian_change(&base_angle);
