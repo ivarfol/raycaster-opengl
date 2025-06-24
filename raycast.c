@@ -29,7 +29,17 @@ extern void mod_brightness(float *r, float *g, float *b, float brightness);
 enum { red, green, blue };
 
 typedef struct {
-    int w, a, s, d, q, e, m, f, space, shift, p;
+    unsigned w : 1;
+    unsigned a : 1;
+    unsigned s : 1;
+    unsigned d : 1;
+    unsigned q : 1;
+    unsigned e : 1;
+    unsigned m : 1;
+    unsigned f : 1;
+    unsigned space : 1;
+    unsigned shift : 1;
+    unsigned p : 1;
 } keys;
 keys oldkeys;
 keys newkeys;
