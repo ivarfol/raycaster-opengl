@@ -39,13 +39,16 @@ int parse(FILE* fptr, float texture[][3]) {
                 break;
             if (c == '\n' || c == ' ') {
                 if (line == 1) {
+                    text[symbol] = '\0';
                     if (Ylength == 0)
                         Ylength = stoi(text);
                     else
                         Xlength = stoi(text);
                 }
-                else if (line == 2)
+                else if (line == 2) {
+                    text[symbol] = '\0';
                     depth = stoi(text);
+                }
                 if (c == SEP) {
                     line++;
                     break;
