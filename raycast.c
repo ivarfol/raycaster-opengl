@@ -79,6 +79,11 @@ int map[MAPX * MAPY] =
 };
 
 float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
+float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
+float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
+float lamp_one[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
+float lamp_two[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
+float lamp_three[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -95,27 +100,72 @@ door_struct* getDoor(int x, int y) {
     return(&doors[i]);
 }
 
-void gen_light(int lightX, int lightY) {
+void gen_light(int lightX, int lightY, float intens, float bright_arr[]) {
+    int startX, endX;
+    int startY, endY;
+    float max_dist = sqrt(intens / 0.03);
+    startX = (int)(lightX - max_dist)>>4;
+    if (startX < 0)
+        startX = 0;
+    endX = (int)(lightX + max_dist)>>4;
+    if (endX > MAPX * (TILE / LIGHT_GRID))
+        endX = MAPX * (TILE / LIGHT_GRID);
+
+    startY = (int)(lightY - max_dist)>>4;
+    if (startY < 0)
+        startY = 0;
+    endY = (int)(lightY + max_dist)>>4;
+    if (endY > MAPY * (TILE / LIGHT_GRID))
+        endY = MAPY * (TILE / LIGHT_GRID);
+
     //printf("%d\n", MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID));
     int tileY, tileX;
     float distX, distY;
     float light;
-    for (tileY = 0;tileY<MAPY * (TILE / LIGHT_GRID);tileY++) {
-        for (tileX = 0;tileX<MAPX * (TILE / LIGHT_GRID);tileX++) {
+    int i;
+    for (i = 0; i< MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
+        bright_arr[i] = 0;
+    for (tileY = startY;tileY<endY;tileY++) {
+        for (tileX = startX;tileX<endX;tileX++) {
             distX = tileX * LIGHT_GRID - lightX;
             distY = tileY * LIGHT_GRID - lightY;
-            light = 10000.0f / (distX * distX + distY * distY);
+            light = intens / (distX * distX + distY * distY);
             if (light > 1)
                 light = 1;
-            if (newkeys.l)
-                printf("%0.2f ", light);
-            brightness[tileY * MAPY * (TILE / LIGHT_GRID) + tileX] = light;
+            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX] = light;
         }
-        if (newkeys.l)
-            printf("\n");
     }
-    if (newkeys.l)
+    if (newkeys.l) {
+        for (tileY = 0; tileY < MAPY * (TILE / LIGHT_GRID);tileY++) {
+            for (tileX = 0; tileX < MAPX * (TILE / LIGHT_GRID);tileX++) {
+                printf("%0.2f ", bright_arr[tileY * MAPY * (TILE / LIGHT_GRID) + tileX]);
+            }
+            printf("\n");
+        }
         printf("\n");
+    }
+}
+
+void combine_light(float light[], bool add) {
+    int i;
+    for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++) {
+        if (add) {
+            combined[i] += light[i];
+            if (combined[i] > 1)
+                brightness[i] = 1;
+            else 
+                brightness[i] = combined[i];
+        }
+        else {
+            combined[i] -= light[i];
+            if (combined[i] < 0)
+                brightness[i] = 0;
+            else 
+                brightness[i] = combined[i];
+        }
+        //printf("%0.2f ", brightness[i]);
+    }
+    //printf("\n");
 }
 
 void drawMap() {
@@ -564,7 +614,9 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
-    gen_light((int)(playerX), (int)(playerY));
+    combine_light(player_light, false);
+    gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light);
+    combine_light(player_light, true);
     DDA();
     glutSwapBuffers();
     oldkeys = newkeys;
@@ -626,7 +678,12 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    //gen_light(LIGHT_POS, LIGHT_POS);
+    gen_light(64, 64, 10000.0f, lamp_one);
+    combine_light(lamp_one, true);
+    gen_light(7 * 64, 7 * 64, 10000.0f, lamp_two);
+    combine_light(lamp_two, true);
+    gen_light(4 * 64, 4 * 64, 1000.0f, lamp_three);
+    combine_light(lamp_three, true);
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
     if (fptr != NULL) {
