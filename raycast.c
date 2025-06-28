@@ -12,20 +12,25 @@
 #define SHIFT FOV / 2
 #define DOORN 2
 #define MAP_SCALE 16
+#define LIGHT_GRID 16
 
 #define MIN_LIGHT_DIST 128
 
 #define TEXWIDTH 64
+#define TILE 64
 
 #define PLHEIGHT 32
 
 #define HEIGHT 512
+#define MAPX 8
+#define MAPY 8
+
+#define LIGHT_POS 4 //light source
 
 float texture_one[64 * 64][3];
 float texture_missing[64 * 64][3];
 
 extern int parse(FILE* fptr, float texture[][3]);
-extern void mod_brightness(float *r, float *g, float *b, float brightness);
 enum { red, green, blue };
 
 typedef struct {
@@ -60,7 +65,7 @@ float delta_frames, last_frame;
 
 float angles[RES];
 
-int map[] =
+int map[MAPX * MAPY] =
 {
     1, 1, 1, 1, 1, 1, 1, 1,
     1, 0, 0, 0, 0, 1, 0, 1,
@@ -71,6 +76,8 @@ int map[] =
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 1, 1, 1, 1, 1,
 };
+
+float brightness[MAPX * MAPY * (TILE / LIGHT_GRID)*2] = {1};
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -85,6 +92,9 @@ door_struct* getDoor(int x, int y) {
     int i;
     for (i=0;doors[i].x != x || doors[i].y != y;i++);
     return(&doors[i]);
+}
+
+void gen_light() {
 }
 
 void drawMap() {
@@ -258,7 +268,7 @@ void DDA() {
         radian_change(&correct_fish);
         correct_fish = cos(correct_fish);
 
-        double Cos = cos(angle); //what?
+        double Cos = cos(angle);
         double Sin = sin(angle);
         double Tan = Sin / Cos;
         double invTan = 1 / Tan;
@@ -436,8 +446,6 @@ void DDA() {
                 textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
         }
         float light_dist = distH;
-        if (light_dist < MIN_LIGHT_DIST)
-            light_dist = MIN_LIGHT_DIST;
         distH *= correct_fish;
         float line_height = (64.0 * HEIGHT) / distH;
         int start, end;
@@ -455,6 +463,9 @@ void DDA() {
         int hposition;
         float textureY = offset * deltatextureY;
         int tex_index;
+        float brightness = 10000.0 / light_dist / light_dist;
+        if (brightness > 1)
+            brightness = 1.0f;
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
             if (doorH == NULL) {
@@ -467,8 +478,7 @@ void DDA() {
                 g = texture_missing[tex_index][green];
                 b = texture_missing[tex_index][blue];
             }
-            mod_brightness(&r, &g, &b, 10000.0 / light_dist / light_dist);
-            glColor3f(r, g, b);
+            glColor3f(r * brightness, g * brightness, b * brightness);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
@@ -478,7 +488,9 @@ void DDA() {
         float floor_ray;
         for (hposition = 0;hposition<HEIGHT - end;hposition++) {
             floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
-            light_dist = floor_ray;
+            float brightness = 10000.0 / floor_ray / floor_ray;
+            if (brightness > 1)
+                brightness = 1.0f;
             if (light_dist < MIN_LIGHT_DIST)
                 light_dist = MIN_LIGHT_DIST;
             tex_index = (int)(floor_ray * Sin + playerY) % 64 * 64 + (int)(floor_ray * Cos + playerX) % 64;
@@ -487,16 +499,14 @@ void DDA() {
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
-            mod_brightness(&r, &g, &b, 10000.0 / light_dist / light_dist);
-            glColor3f(r, g, b);
+            glColor3f(r * brightness, g * brightness, b * brightness);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
             glEnd();
             r = texture_missing[tex_index][red] / 2.0;
             g = texture_missing[tex_index][green] / 2.0;
             b = texture_missing[tex_index][blue];
-            mod_brightness(&r, &g, &b, 10000.0 / light_dist / light_dist);
-            glColor3f(r, g, b);
+            glColor3f(r * brightness, g * brightness, b * brightness);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, start -hposition);
             glEnd();
@@ -595,6 +605,7 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
+    gen_light();
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
     if (fptr != NULL) {
