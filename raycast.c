@@ -25,7 +25,7 @@
 #define MAPX 8
 #define MAPY 8
 
-#define LIGHT_POS 4 //light source
+#define LIGHT_POS (4 * TILE) //light source
 
 float texture_one[64 * 64][3];
 float texture_missing[64 * 64][3];
@@ -45,6 +45,7 @@ typedef struct {
     unsigned space : 1;
     unsigned shift : 1;
     unsigned p : 1;
+    unsigned l : 1;
 } keys;
 keys oldkeys;
 keys newkeys;
@@ -77,7 +78,7 @@ int map[MAPX * MAPY] =
     1, 1, 1, 1, 1, 1, 1, 1,
 };
 
-float brightness[MAPX * MAPY * (TILE / LIGHT_GRID)*2] = {1};
+float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -94,7 +95,27 @@ door_struct* getDoor(int x, int y) {
     return(&doors[i]);
 }
 
-void gen_light() {
+void gen_light(int lightX, int lightY) {
+    //printf("%d\n", MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID));
+    int tileY, tileX;
+    float distX, distY;
+    float light;
+    for (tileY = 0;tileY<MAPY * (TILE / LIGHT_GRID);tileY++) {
+        for (tileX = 0;tileX<MAPX * (TILE / LIGHT_GRID);tileX++) {
+            distX = tileX * LIGHT_GRID - lightX;
+            distY = tileY * LIGHT_GRID - lightY;
+            light = 10000.0f / (distX * distX + distY * distY);
+            if (light > 1)
+                light = 1;
+            if (newkeys.l)
+                printf("%0.2f ", light);
+            brightness[tileY * MAPY * (TILE / LIGHT_GRID) + tileX] = light;
+        }
+        if (newkeys.l)
+            printf("\n");
+    }
+    if (newkeys.l)
+        printf("\n");
 }
 
 void drawMap() {
@@ -420,11 +441,9 @@ void DDA() {
         }
 
 
-        float bright = 1.0;
         float textureX;
         if (distV <= distH) {
             distH = distV;
-            bright = 0.7;
             if (doorV == NULL) {
                 if (Cos > 0)
                     textureX = (int)rayYV % 64;
@@ -434,6 +453,8 @@ void DDA() {
             else
                 textureX = -64 + (int)rayYV % 64 + ceil(doorV->exte);
             doorH = doorV;
+            rayYH = rayYV;
+            rayXH = rayXV;
         }
         else {
             if (doorH == NULL) {
@@ -463,9 +484,7 @@ void DDA() {
         int hposition;
         float textureY = offset * deltatextureY;
         int tex_index;
-        float brightness = 10000.0 / light_dist / light_dist;
-        if (brightness > 1)
-            brightness = 1.0f;
+        float bright;
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
             if (doorH == NULL) {
@@ -478,7 +497,8 @@ void DDA() {
                 g = texture_missing[tex_index][green];
                 b = texture_missing[tex_index][blue];
             }
-            glColor3f(r * brightness, g * brightness, b * brightness);
+            bright = brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)];
+            glColor3f(r * bright, g * bright, b * bright);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
@@ -488,25 +508,21 @@ void DDA() {
         float floor_ray;
         for (hposition = 0;hposition<HEIGHT - end;hposition++) {
             floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
-            float brightness = 10000.0 / floor_ray / floor_ray;
-            if (brightness > 1)
-                brightness = 1.0f;
-            if (light_dist < MIN_LIGHT_DIST)
-                light_dist = MIN_LIGHT_DIST;
             tex_index = (int)(floor_ray * Sin + playerY) % 64 * 64 + (int)(floor_ray * Cos + playerX) % 64;
+            bright = brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)];
             if (tex_index > 63 * 64)
                 tex_index = 63*64;
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
-            glColor3f(r * brightness, g * brightness, b * brightness);
+            glColor3f(r * bright, g * bright, b * bright);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
             glEnd();
             r = texture_missing[tex_index][red] / 2.0;
             g = texture_missing[tex_index][green] / 2.0;
             b = texture_missing[tex_index][blue];
-            glColor3f(r * brightness, g * brightness, b * brightness);
+            glColor3f(r * bright, g * bright, b * bright);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, start -hposition);
             glEnd();
@@ -548,6 +564,7 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
+    gen_light((int)(playerX), (int)(playerY));
     DDA();
     glutSwapBuffers();
     oldkeys = newkeys;
@@ -574,6 +591,8 @@ void keydown(unsigned char key, int x, int y) {
         newkeys.space = 1;
     if (key == 'p')
         newkeys.p = 1;
+    if (key == 'l')
+        newkeys.l = 1;
 }
 
 void keyup(unsigned char key, int x, int y) {
@@ -597,6 +616,8 @@ void keyup(unsigned char key, int x, int y) {
         newkeys.space = 0;
     if (key == 'p')
         newkeys.p = 0;
+    if (key == 'l')
+        newkeys.l = 0;
 }
 
 void init() {
@@ -605,7 +626,7 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    gen_light();
+    //gen_light(LIGHT_POS, LIGHT_POS);
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
     if (fptr != NULL) {
