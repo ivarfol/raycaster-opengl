@@ -14,9 +14,14 @@
 #define MAP_SCALE 16
 #define LIGHT_GRID 16
 
+#define LIGHT_POW 4
+#define TILE_POW 6
+
 #define MIN_LIGHT_DIST 128
 
 #define TEXWIDTH 64
+#define TEXHEIGHT 64
+#define CHANNELS 3
 #define TILE 64
 
 #define PLHEIGHT 32
@@ -25,12 +30,14 @@
 #define MAPX 8
 #define MAPY 8
 
+#define MIN_BRIGHTNESS 0.03
+
 #define LIGHT_POS (4 * TILE) //light source
 
-float texture_one[64 * 64][3];
-float texture_missing[64 * 64][3];
+float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
+float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
 
-extern int parse(FILE* fptr, float texture[][3]);
+extern int parse(FILE* fptr, float texture[][CHANNELS]);
 enum { red, green, blue };
 
 typedef struct {
@@ -57,7 +64,6 @@ typedef struct {
 door_struct doors[DOORN];
 
 float playerX, playerY, playerAngle;
-unsigned int mapX = MAPX, mapY = MAPY;
 bool show_map = true;
 float move_direction_v, move_direction_h;
 double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
@@ -79,10 +85,10 @@ int map[MAPX * MAPY] =
 };
 bool visible[MAPX * MAPY] = { false };
 
-float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
-float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
-float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
-float lamp[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
+float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
+float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
+float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
+float lamp[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -99,21 +105,21 @@ door_struct* getDoor(int x, int y) {
     return(&doors[i]);
 }
 
-void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], float r, float g, float b, bool is_static) {
+void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS], float r, float g, float b, bool is_static) {
     int startX, endX;
     int startY, endY;
-    float max_dist = sqrt(intens / 0.03);
-    startX = (int)(lightX - max_dist)>>4;
+    float max_dist = sqrt(intens / MIN_BRIGHTNESS);
+    startX = (int)(lightX - max_dist)>>LIGHT_POW;
     if (startX < 0)
         startX = 0;
-    endX = (int)(lightX + max_dist)>>4;
+    endX = (int)(lightX + max_dist)>>LIGHT_POW;
     if (endX > MAPX * (TILE / LIGHT_GRID))
         endX = MAPX * (TILE / LIGHT_GRID);
 
-    startY = (int)(lightY - max_dist)>>4;
+    startY = (int)(lightY - max_dist)>>LIGHT_POW;
     if (startY < 0)
         startY = 0;
-    endY = (int)(lightY + max_dist)>>4;
+    endY = (int)(lightY + max_dist)>>LIGHT_POW;
     if (endY > MAPY * (TILE / LIGHT_GRID))
         endY = MAPY * (TILE / LIGHT_GRID);
 
@@ -122,13 +128,13 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], floa
     float distX, distY;
     float light;
     int i, color;
-    for (color=0;color<3;color++) {
+    for (color=0;color<CHANNELS;color++) {
         for (i = 0; i< MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
             bright_arr[i][color] = 0;
     }
     for (tileY = startY;tileY<endY;tileY++) {
         for (tileX = startX;tileX<endX;tileX++) {
-            if (visible[(tileY>>2)*MAPX + (tileX>>2)] || is_static) {
+            if (visible[(tileY>>(TILE_POW-LIGHT_POW))*MAPX + (tileX>>(TILE_POW-LIGHT_POW))] || is_static) {
                 distX = tileX * LIGHT_GRID - lightX;
                 distY = tileY * LIGHT_GRID - lightY;
                 light = intens / (distX * distX + distY * distY);
@@ -153,9 +159,9 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], floa
     */
 }
 
-void combine_light(float light[][3], bool add) {
+void combine_light(float light[][CHANNELS], bool add) {
     int i, color;
-    for (color=0;color<3;color++) {
+    for (color=0;color<CHANNELS;color++) {
         for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++) {
             if (add) {
                 combined[i][color] += light[i][color];
@@ -179,9 +185,9 @@ void combine_light(float light[][3], bool add) {
 
 void drawMap() {
     int x, y, tileX, tileY;
-    for (y=0;y<mapY;y++) {
-        for (x=0;x<mapX;x++) {
-            if (map[y*mapX + x] == 1) {
+    for (y=0;y<MAPY;y++) {
+        for (x=0;x<MAPX;x++) {
+            if (map[y*MAPX+ x] == 1) {
                 glColor3f(1, 1, 1);
                 tileX = x * MAP_SCALE;
                 tileY = y * MAP_SCALE;
@@ -192,7 +198,7 @@ void drawMap() {
                 glVertex2i(tileX + MAP_SCALE- 1, tileY + 1);
                 glEnd();
             }
-            else if (map[y*mapX + x] == 2) {
+            else if (map[y*MAPX + x] == 2) {
                 tileX = (x + 0.5) * MAP_SCALE;
                 tileY = y * MAP_SCALE;
                 glBegin(GL_LINES);
@@ -200,7 +206,7 @@ void drawMap() {
                 glVertex2i(tileX, tileY + MAP_SCALE - 1);
                 glEnd();
             }
-            else if (map[y*mapX + x] == 3) {
+            else if (map[y*MAPX+ x] == 3) {
                 tileX = x * MAP_SCALE;
                 tileY = (y + 0.5) * MAP_SCALE;
                 glBegin(GL_LINES);
@@ -217,16 +223,16 @@ void movef(int speed, float move_direction, float *positionX, float *positionY, 
     door = NULL;
     float tmpX = *positionX + cos(move_direction) * modifier * delta_frames;
     float tmpY = *positionY + sin(move_direction) * modifier * delta_frames;
-    int tmpYmap = map[((int)tmpY>>6) * mapX + ((int)(*positionX)>>6)];
-    int tmpXmap = map[((int)(*positionY)>>6) * mapX + ((int)tmpX>>6)];
+    int tmpYmap = map[((int)tmpY>>TILE_POW) * MAPX + ((int)(*positionX)>>TILE_POW)];
+    int tmpXmap = map[((int)(*positionY)>>TILE_POW) * MAPX + ((int)tmpX>>TILE_POW)];
     int oldposY = *positionY;
     if (tmpYmap == 3 || tmpYmap == 2)
-        door = getDoor(((int)(*positionX)>>6), ((int)tmpY>>6));
+        door = getDoor(((int)(*positionX)>>TILE_POW), ((int)tmpY>>TILE_POW));
     if (tmpYmap == 0 || door != NULL && door->exte == 0.0)
         *positionY = tmpY;
     door = NULL;
     if (tmpXmap == 3 || tmpXmap == 2)
-        door = getDoor(((int)tmpX>>6), ((int)(oldposY)>>6));
+        door = getDoor(((int)tmpX>>TILE_POW), ((int)(oldposY)>>TILE_POW));
     if (tmpXmap == 0 || door != NULL && door->exte == 0.0)
         *positionX = tmpX;
 }
@@ -284,12 +290,12 @@ void check_inputs() {
     if (newkeys.space) {
         //up/down
         if (Sin < -0.0001) {
-            rayYH = ((((int)playerY)>>6)<<6) - 0.0001;
+            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) - 0.0001;
             rayXH = playerX - (playerY - rayYH) * invTan;
             distH = - (playerY - rayYH) / Sin;
         }
         else if (Sin > 0.0001) {
-            rayYH = ((((int)playerY)>>6)<<6) + 64;
+            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) + TILE;
             rayXH = playerX - (playerY - rayYH) * invTan;
             distH = - (playerY - rayYH) / Sin;
         }
@@ -301,12 +307,12 @@ void check_inputs() {
 
         //left/right
         if (Cos > 0.0001) {
-            rayXV = ((((int)playerX)>>6)<<6) + 64;
+            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) + TILE;
             rayYV = playerY - (playerX - rayXV) * Tan;
             distV = - (playerX - rayXV) / Cos;
         }
         else if (Cos < -0.0001) {
-            rayXV = ((((int)playerX)>>6)<<6) - 0.001;
+            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) - 0.001;
             rayYV = playerY - (playerX - rayXV) * Tan;
             distV = - (playerX - rayXV) / Cos;
         }
@@ -319,9 +325,9 @@ void check_inputs() {
             rayXH = rayXV;
             rayYH = rayYV;
         }
-        raymapX = (int)(rayXH)>>6;
-        raymapY = (int)(rayYH)>>6;
-        if (map[raymapX + raymapY * mapX] == 2 || map[raymapX + raymapY * mapX] == 3) {
+        raymapX = (int)(rayXH)>>TILE_POW;
+        raymapY = (int)(rayYH)>>TILE_POW;
+        if (map[raymapX + raymapY * MAPX] == 2 || map[raymapX + raymapY * MAPX] == 3) {
             door = getDoor(raymapX, raymapY);
             door->exte_rate = -0.5;
         }
@@ -357,19 +363,19 @@ void DDA() {
 
         //up/down
         if (Sin < -0.0001) {
-            deltaYH = - 64;
-            deltaXH = - 64 * invTan;
-            deltadistH = - 64 / Sin;
-            rayYH = ((((int)playerY)>>6)<<6) - 0.0001;
+            deltaYH = - TILE;
+            deltaXH = - TILE * invTan;
+            deltadistH = - TILE / Sin;
+            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) - 0.0001;
             rayXH = playerX - (playerY - rayYH) * invTan;
             distH = - (playerY - rayYH) / Sin;
             dofH = 0;
         }
         else if (Sin > 0.0001) {
-            deltaYH = 64;
-            deltaXH = 64 * invTan;
-            deltadistH = 64 / Sin;
-            rayYH = ((((int)playerY)>>6)<<6) + 64;
+            deltaYH = TILE;
+            deltaXH = TILE * invTan;
+            deltadistH = TILE / Sin;
+            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) + TILE;
             rayXH = playerX - (playerY - rayYH) * invTan;
             distH = - (playerY - rayYH) / Sin;
             dofH = 0;
@@ -383,19 +389,19 @@ void DDA() {
 
         //left/right
         if (Cos > 0.0001) {
-            deltaXV = 64;
-            deltaYV = 64 * Tan;
-            deltadistV = 64 / Cos;
-            rayXV = ((((int)playerX)>>6)<<6) + 64;
+            deltaXV = TILE;
+            deltaYV = TILE * Tan;
+            deltadistV = TILE / Cos;
+            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) + TILE;
             rayYV = playerY - (playerX - rayXV) * Tan;
             distV = - (playerX - rayXV) / Cos;
             dofV = 0;
         }
         else if (Cos < -0.0001) {
-            deltaXV = - 64;
-            deltaYV = - 64 * Tan;
-            deltadistV = - 64 / Cos;
-            rayXV = ((((int)playerX)>>6)<<6) - 0.001;
+            deltaXV = - TILE;
+            deltaYV = - TILE * Tan;
+            deltadistV = - TILE / Cos;
+            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) - 0.001;
             rayYV = playerY - (playerX - rayXV) * Tan;
             distV = - (playerX - rayXV) / Cos;
             dofV = 0;
@@ -406,7 +412,7 @@ void DDA() {
             distV = 10000.0f;
             dofV = DOF;
         }
-        visible[(((int)playerY)>>6) * MAPX + (((int)playerX)>>6)] = true;
+        visible[(((int)playerY)>>TILE_POW) * MAPX + (((int)playerX)>>TILE_POW)] = true;
         int raymapXH, raymapYH, raymapH;
         int raymapXV, raymapYV, raymapV;
         door_struct* doorH;
@@ -415,21 +421,21 @@ void DDA() {
         doorV = NULL;
         while (dofV < DOF || dofH < DOF) {
             if (dofH < DOF && distH <= distV) {
-                raymapXH = (int)(rayXH)>>6;
-                raymapYH = (int)(rayYH)>>6;
-                raymapH = raymapXH + raymapYH * mapX;
-                if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 1) {
+                raymapXH = (int)(rayXH)>>TILE_POW;
+                raymapYH = (int)(rayYH)>>TILE_POW;
+                raymapH = raymapXH + raymapYH * MAPX;
+                if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 1) {
                     if (!visible[raymapH])
                         visible[raymapH] = true;
                     dofH = DOF;
                     doorH = NULL;
                     break;
                 }
-                else if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 3) {
+                else if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 3) {
                     if (!visible[raymapH])
                         visible[raymapH] = true;
                     doorH = getDoor(raymapXH, raymapYH);
-                    if (doorH->x * 64 - doorH->exte + 64 < rayXH + 0.5 * deltaXH) {
+                    if (doorH->x * TILE - doorH->exte + TILE < rayXH + 0.5 * deltaXH) {
                         dofH = DOF;
                         distH += 0.5 * deltadistH;
                         rayXH += 0.5 * deltaXH;
@@ -444,7 +450,7 @@ void DDA() {
                     }
                 }
                 else {
-                    if (raymapH > 0 && raymapH < mapX * mapY && !visible[raymapH])
+                    if (raymapH > 0 && raymapH < MAPX * MAPY && !visible[raymapH])
                         visible[raymapH] = true;
                     rayXH += deltaXH;
                     rayYH += deltaYH;
@@ -453,21 +459,21 @@ void DDA() {
                 }
             }
             else if (dofV < DOF && distV < distH) {
-                raymapXV = (int)(rayXV)>>6;
-                raymapYV = (int)(rayYV)>>6;
-                raymapV = raymapXV + raymapYV * mapX;
-                if (raymapV > 0 && raymapV <mapX * mapY && map[raymapV] == 1) {
+                raymapXV = (int)(rayXV)>>TILE_POW;
+                raymapYV = (int)(rayYV)>>TILE_POW;
+                raymapV = raymapXV + raymapYV * MAPX;
+                if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 1) {
                     if (!visible[raymapV])
                         visible[raymapV] = true;
                     dofV = DOF;
                     doorV = NULL;
                     break;
                 }
-                else if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 2) {
+                else if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 2) {
                     if (!visible[raymapV])
                         visible[raymapV] = true;
                     doorV = getDoor(raymapXV, raymapYV);
-                    if (doorV->y * 64 - doorV->exte + 64 < rayYV + 0.5 * deltaYV) {
+                    if (doorV->y * TILE - doorV->exte + TILE < rayYV + 0.5 * deltaYV) {
                         dofV = DOF;
                         distV += 0.5 * deltadistV;
                         rayXV += 0.5 * deltaXV;
@@ -482,7 +488,7 @@ void DDA() {
                     }
                 }
                 else {
-                    if (raymapV > 0 && raymapV < mapX * mapY && !visible[raymapV])
+                    if (raymapV > 0 && raymapV < MAPX * MAPY && !visible[raymapV])
                         visible[raymapV] = true;
                     rayXV += deltaXV;
                     rayYV += deltaYV;
@@ -513,16 +519,16 @@ void DDA() {
                 glColor3f(0, 1, 0);
                 glLineWidth(1);
                 glBegin(GL_LINES);
-                glVertex2i(playerX / 64 * MAP_SCALE, playerY / 64 * MAP_SCALE);
-                glVertex2i(rayXV / 64 * MAP_SCALE, rayYV / 64 * MAP_SCALE);
+                glVertex2i(playerX / TILE * MAP_SCALE, playerY / TILE * MAP_SCALE);
+                glVertex2i(rayXV / TILE * MAP_SCALE, rayYV / TILE * MAP_SCALE);
                 glEnd();
             }
             else {
                 glColor3f(0, 0, 1);
                 glLineWidth(1);
                 glBegin(GL_LINES);
-                glVertex2i(playerX / 64 * MAP_SCALE, playerY / 64 * MAP_SCALE);
-                glVertex2i(rayXH / 64 * MAP_SCALE, rayYH / 64 * MAP_SCALE);
+                glVertex2i(playerX / TILE * MAP_SCALE, playerY / TILE * MAP_SCALE);
+                glVertex2i(rayXH / TILE * MAP_SCALE, rayYH / TILE * MAP_SCALE);
                 glEnd();
             }
         }
@@ -584,9 +590,9 @@ void DDA() {
                 g = texture_missing[tex_index][green];
                 b = texture_missing[tex_index][blue];
             }
-            r *= brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)][red];
-            g *= brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)][green];
-            b *= brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)][blue];
+            r *= brightness[((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW)][red];
+            g *= brightness[((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW)][green];
+            b *= brightness[((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW)][blue];
             glColor3f(r, g, b);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
@@ -603,9 +609,9 @@ void DDA() {
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
-            r *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][red];
-            g *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][green];
-            b *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][blue];
+            r *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][red];
+            g *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][green];
+            b *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][blue];
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
@@ -613,9 +619,9 @@ void DDA() {
             r = texture_missing[tex_index][red] / 2.0;
             g = texture_missing[tex_index][green] / 2.0;
             b = texture_missing[tex_index][blue];
-            r *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][red];
-            g *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][green];
-            b *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][blue];
+            r *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][red];
+            g *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][green];
+            b *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][blue];
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, start -hposition);
@@ -722,11 +728,11 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    gen_light(3*64, 3*64, 10000.0f, lamp, 1, 0, 0, true);
+    gen_light(3*TILE, 3*TILE, 10000.0f, lamp, 1, 0, 0, true);
     combine_light(lamp, true);
-    gen_light(5 * 64, 4 * 64, 10000.0f, lamp, 0, 1, 0, true);
+    gen_light(5 * TILE, 4 * TILE, 10000.0f, lamp, 0, 1, 0, true);
     combine_light(lamp, true);
-    gen_light(4 * 64, 4 * 64, 10000.0f, lamp, 0, 0, 1, true);
+    gen_light(4 * TILE, 4 * TILE, 10000.0f, lamp, 0, 0, 1, true);
     combine_light(lamp, true);
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
