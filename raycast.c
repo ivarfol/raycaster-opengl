@@ -78,12 +78,10 @@ int map[MAPX * MAPY] =
     1, 1, 1, 1, 1, 1, 1, 1,
 };
 
-float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
-float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
-float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
-float lamp_one[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
-float lamp_two[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
-float lamp_three[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)] = {1};
+float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
+float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
+float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
+float lamp[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -100,7 +98,7 @@ door_struct* getDoor(int x, int y) {
     return(&doors[i]);
 }
 
-void gen_light(int lightX, int lightY, float intens, float bright_arr[]) {
+void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], float r, float g, float b) {
     int startX, endX;
     int startY, endY;
     float max_dist = sqrt(intens / 0.03);
@@ -122,9 +120,11 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[]) {
     int tileY, tileX;
     float distX, distY;
     float light;
-    int i;
-    for (i = 0; i< MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
-        bright_arr[i] = 0;
+    int i, color;
+    for (color=0;color<3;color++) {
+        for (i = 0; i< MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
+            bright_arr[i][color] = 0;
+    }
     for (tileY = startY;tileY<endY;tileY++) {
         for (tileX = startX;tileX<endX;tileX++) {
             distX = tileX * LIGHT_GRID - lightX;
@@ -132,9 +132,12 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[]) {
             light = intens / (distX * distX + distY * distY);
             if (light > 1)
                 light = 1;
-            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX] = light;
+            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][red] = light * r;
+            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][green] = light * g;
+            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][blue] = light * b;
         }
     }
+    /*
     if (newkeys.l) {
         for (tileY = 0; tileY < MAPY * (TILE / LIGHT_GRID);tileY++) {
             for (tileX = 0; tileX < MAPX * (TILE / LIGHT_GRID);tileX++) {
@@ -144,28 +147,31 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[]) {
         }
         printf("\n");
     }
+    */
 }
 
-void combine_light(float light[], bool add) {
-    int i;
-    for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++) {
-        if (add) {
-            combined[i] += light[i];
-            if (combined[i] > 1)
-                brightness[i] = 1;
-            else 
-                brightness[i] = combined[i];
+void combine_light(float light[][3], bool add) {
+    int i, color;
+    for (color=0;color<3;color++) {
+        for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++) {
+            if (add) {
+                combined[i][color] += light[i][color];
+                if (combined[i][color] > 1)
+                    brightness[i][color] = 1;
+                else 
+                    brightness[i][color] = combined[i][color];
+            }
+            else {
+                combined[i][color] -= light[i][color];
+                if (combined[i][color] < 0)
+                    brightness[i][color] = 0;
+                else 
+                    brightness[i][color] = combined[i][color];
+            }
+            //printf("%0.2f ", brightness[i]);
         }
-        else {
-            combined[i] -= light[i];
-            if (combined[i] < 0)
-                brightness[i] = 0;
-            else 
-                brightness[i] = combined[i];
-        }
-        //printf("%0.2f ", brightness[i]);
+        //printf("\n");
     }
-    //printf("\n");
 }
 
 void drawMap() {
@@ -534,7 +540,6 @@ void DDA() {
         int hposition;
         float textureY = offset * deltatextureY;
         int tex_index;
-        float bright;
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
             if (doorH == NULL) {
@@ -547,8 +552,10 @@ void DDA() {
                 g = texture_missing[tex_index][green];
                 b = texture_missing[tex_index][blue];
             }
-            bright = brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)];
-            glColor3f(r * bright, g * bright, b * bright);
+            r *= brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)][red];
+            g *= brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)][green];
+            b *= brightness[((int)rayYH>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>4)][blue];
+            glColor3f(r, g, b);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition);
@@ -559,20 +566,25 @@ void DDA() {
         for (hposition = 0;hposition<HEIGHT - end;hposition++) {
             floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
             tex_index = (int)(floor_ray * Sin + playerY) % 64 * 64 + (int)(floor_ray * Cos + playerX) % 64;
-            bright = brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)];
             if (tex_index > 63 * 64)
                 tex_index = 63*64;
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
-            glColor3f(r * bright, g * bright, b * bright);
+            r *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][red];
+            g *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][green];
+            b *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][blue];
+            glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
             glEnd();
             r = texture_missing[tex_index][red] / 2.0;
             g = texture_missing[tex_index][green] / 2.0;
             b = texture_missing[tex_index][blue];
-            glColor3f(r * bright, g * bright, b * bright);
+            r *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][red];
+            g *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][green];
+            b *= brightness[((int)(floor_ray * Sin + playerY)>>4)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>4)][blue];
+            glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, start -hposition);
             glEnd();
@@ -615,7 +627,7 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
     combine_light(player_light, false);
-    gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light);
+    gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light, 1, 1, 1);
     combine_light(player_light, true);
     DDA();
     glutSwapBuffers();
@@ -678,12 +690,12 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    gen_light(64, 64, 10000.0f, lamp_one);
-    combine_light(lamp_one, true);
-    gen_light(7 * 64, 7 * 64, 10000.0f, lamp_two);
-    combine_light(lamp_two, true);
-    gen_light(4 * 64, 4 * 64, 1000.0f, lamp_three);
-    combine_light(lamp_three, true);
+    gen_light(3*64, 3*64, 10000.0f, lamp, 1, 0, 0);
+    combine_light(lamp, true);
+    gen_light(5 * 64, 4 * 64, 10000.0f, lamp, 0, 1, 0);
+    combine_light(lamp, true);
+    gen_light(4 * 64, 4 * 64, 10000.0f, lamp, 0, 0, 1);
+    combine_light(lamp, true);
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
     if (fptr != NULL) {
