@@ -12,9 +12,9 @@
 #define SHIFT FOV / 2
 #define DOORN 2
 #define MAP_SCALE 16
-#define LIGHT_GRID 4
+#define LIGHT_GRID 1
 
-#define LIGHT_POW 2
+#define LIGHT_POW 0
 #define TILE_POW 6
 
 #define MIN_LIGHT_DIST 128
@@ -87,7 +87,7 @@ bool visible[MAPX * MAPY] = { false };
 
 float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
 float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
-float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
+//float player_light[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
 float lamp[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
 
 void radian_change(float *a) {
@@ -806,7 +806,7 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
-    combine_light(player_light, false);
+    //combine_light(player_light, false);
     //gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light, 1, 1, 1, false);
     //combine_light(player_light, true);
     DDA();
