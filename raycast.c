@@ -57,7 +57,7 @@ typedef struct {
 door_struct doors[DOORN];
 
 float playerX, playerY, playerAngle;
-unsigned int mapX = 8, mapY = 8;
+unsigned int mapX = MAPX, mapY = MAPY;
 bool show_map = true;
 float move_direction_v, move_direction_h;
 double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
@@ -77,6 +77,7 @@ int map[MAPX * MAPY] =
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 1, 1, 1, 1, 1,
 };
+bool visible[MAPX * MAPY] = { false };
 
 float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
 float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][3];
@@ -98,7 +99,7 @@ door_struct* getDoor(int x, int y) {
     return(&doors[i]);
 }
 
-void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], float r, float g, float b) {
+void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], float r, float g, float b, bool is_static) {
     int startX, endX;
     int startY, endY;
     float max_dist = sqrt(intens / 0.03);
@@ -127,14 +128,16 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][3], floa
     }
     for (tileY = startY;tileY<endY;tileY++) {
         for (tileX = startX;tileX<endX;tileX++) {
-            distX = tileX * LIGHT_GRID - lightX;
-            distY = tileY * LIGHT_GRID - lightY;
-            light = intens / (distX * distX + distY * distY);
-            if (light > 1)
-                light = 1;
-            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][red] = light * r;
-            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][green] = light * g;
-            bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][blue] = light * b;
+            if (visible[(tileY>>2)*MAPX + (tileX>>2)] || is_static) {
+                distX = tileX * LIGHT_GRID - lightX;
+                distY = tileY * LIGHT_GRID - lightY;
+                light = intens / (distX * distX + distY * distY);
+                if (light > 1)
+                    light = 1;
+                bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][red] = light * r;
+                bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][green] = light * g;
+                bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][blue] = light * b;
+            }
         }
     }
     /*
@@ -336,6 +339,8 @@ void DDA() {
     float rayXH, rayYH;
     float deltadistH, deltadistV;
     int ray, i;
+    for (i=0;i<MAPX*MAPY;i++)
+        visible[i] = false;
     for (ray = 0; ray<RES;ray++) {
         float distH = 10000.0f;
         float distV = 10000.0f;
@@ -347,7 +352,7 @@ void DDA() {
 
         double Cos = cos(angle);
         double Sin = sin(angle);
-        double Tan = Sin / Cos;
+        double Tan = tan(angle);
         double invTan = 1 / Tan;
 
         //up/down
@@ -401,6 +406,7 @@ void DDA() {
             distV = 10000.0f;
             dofV = DOF;
         }
+        visible[(((int)playerY)>>6) * MAPX + (((int)playerX)>>6)] = true;
         int raymapXH, raymapYH, raymapH;
         int raymapXV, raymapYV, raymapV;
         door_struct* doorH;
@@ -413,11 +419,15 @@ void DDA() {
                 raymapYH = (int)(rayYH)>>6;
                 raymapH = raymapXH + raymapYH * mapX;
                 if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 1) {
+                    if (!visible[raymapH])
+                        visible[raymapH] = true;
                     dofH = DOF;
                     doorH = NULL;
                     break;
                 }
                 else if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 3) {
+                    if (!visible[raymapH])
+                        visible[raymapH] = true;
                     doorH = getDoor(raymapXH, raymapYH);
                     if (doorH->x * 64 - doorH->exte + 64 < rayXH + 0.5 * deltaXH) {
                         dofH = DOF;
@@ -434,6 +444,8 @@ void DDA() {
                     }
                 }
                 else {
+                    if (raymapH > 0 && raymapH < mapX * mapY && !visible[raymapH])
+                        visible[raymapH] = true;
                     rayXH += deltaXH;
                     rayYH += deltaYH;
                     distH += deltadistH;
@@ -445,11 +457,15 @@ void DDA() {
                 raymapYV = (int)(rayYV)>>6;
                 raymapV = raymapXV + raymapYV * mapX;
                 if (raymapV > 0 && raymapV <mapX * mapY && map[raymapV] == 1) {
+                    if (!visible[raymapV])
+                        visible[raymapV] = true;
                     dofV = DOF;
                     doorV = NULL;
                     break;
                 }
                 else if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 2) {
+                    if (!visible[raymapV])
+                        visible[raymapV] = true;
                     doorV = getDoor(raymapXV, raymapYV);
                     if (doorV->y * 64 - doorV->exte + 64 < rayYV + 0.5 * deltaYV) {
                         dofV = DOF;
@@ -466,6 +482,8 @@ void DDA() {
                     }
                 }
                 else {
+                    if (raymapV > 0 && raymapV < mapX * mapY && !visible[raymapV])
+                        visible[raymapV] = true;
                     rayXV += deltaXV;
                     rayYV += deltaYV;
                     distV += deltadistV;
@@ -475,6 +493,19 @@ void DDA() {
             else
                 break;
         }
+
+        /*
+        int j;
+        if (newkeys.l) {
+            for (i=0;i<MAPY;i++) {
+                for (j=0;j<MAPX;j++) {
+                    printf("%b ", visible[i * MAPX + j]);
+                }
+                printf("\n");
+            }
+            printf("\n");
+        }
+        */
 
         if (show_map) {
             drawMap();
@@ -522,6 +553,7 @@ void DDA() {
             else
                 textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
         }
+
         float light_dist = distH;
         distH *= correct_fish;
         float line_height = (64.0 * HEIGHT) / distH;
@@ -627,7 +659,7 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
     combine_light(player_light, false);
-    gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light, 1, 1, 1);
+    gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light, 1, 1, 1, false);
     combine_light(player_light, true);
     DDA();
     glutSwapBuffers();
@@ -690,11 +722,11 @@ void init() {
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    gen_light(3*64, 3*64, 10000.0f, lamp, 1, 0, 0);
+    gen_light(3*64, 3*64, 10000.0f, lamp, 1, 0, 0, true);
     combine_light(lamp, true);
-    gen_light(5 * 64, 4 * 64, 10000.0f, lamp, 0, 1, 0);
+    gen_light(5 * 64, 4 * 64, 10000.0f, lamp, 0, 1, 0, true);
     combine_light(lamp, true);
-    gen_light(4 * 64, 4 * 64, 10000.0f, lamp, 0, 0, 1);
+    gen_light(4 * 64, 4 * 64, 10000.0f, lamp, 0, 0, 1, true);
     combine_light(lamp, true);
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
