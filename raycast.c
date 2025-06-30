@@ -717,6 +717,7 @@ void DDA() {
         int hposition;
         float textureY = offset * deltatextureY;
         int tex_index;
+        int bright_index;
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
             if (doorH == NULL) {
@@ -729,9 +730,12 @@ void DDA() {
                 g = texture_missing[tex_index][green];
                 b = texture_missing[tex_index][blue];
             }
-            r *= brightness[((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW)][red];
-            g *= brightness[((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW)][green];
-            b *= brightness[((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW)][blue];
+            bright_index = ((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW);
+            if (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID) <= bright_index || bright_index < 0)
+                bright_index = 0;
+            r *= brightness[bright_index][red];
+            g *= brightness[bright_index][green];
+            b *= brightness[bright_index][blue];
             glColor3f(r, g, b);
             glPointSize(SCALE);
             glBegin(GL_POINTS);
@@ -748,9 +752,12 @@ void DDA() {
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
-            r *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][red];
-            g *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][green];
-            b *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][blue];
+            bright_index = ((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW);
+            if (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID) <= bright_index || bright_index < 0)
+                bright_index = 0;
+            r *= brightness[bright_index][red];
+            g *= brightness[bright_index][green];
+            b *= brightness[bright_index][blue];
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, hposition + end);
@@ -761,9 +768,9 @@ void DDA() {
             b = texture_missing[tex_index][blue];
             */
             r = g = b = 1;
-            r *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][red];
-            g *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][green];
-            b *= brightness[((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW)][blue];
+            r *= brightness[bright_index][red];
+            g *= brightness[bright_index][green];
+            b *= brightness[bright_index][blue];
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE, start -hposition);
