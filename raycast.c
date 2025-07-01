@@ -12,9 +12,9 @@
 #define SHIFT FOV / 2
 #define DOORN 2
 #define MAP_SCALE 16
-#define LIGHT_GRID 1
+#define LIGHT_GRID 2
 
-#define LIGHT_POW 0
+#define LIGHT_POW 1
 #define TILE_POW 6
 
 #define MIN_LIGHT_DIST 128
@@ -28,7 +28,7 @@
 
 #define HEIGHT 512
 #define MAPX 8
-#define MAPY 8
+#define MAPY 12
 
 #define MIN_BRIGHTNESS 0.01
 
@@ -63,6 +63,18 @@ typedef struct {
 } door_struct;
 door_struct doors[DOORN];
 
+typedef struct {
+    bool isdoor;
+    float rayX;
+    float rayY;
+    float l_height;
+    float textureX;
+    float correct_fish;
+    double Cos;
+    double Sin;
+} line_out_info;
+line_out_info render_info[RES];
+
 float playerX, playerY, playerAngle;
 bool show_map = true;
 float move_direction_v, move_direction_h;
@@ -81,9 +93,14 @@ int map[MAPX * MAPY] =
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 1, 1, 1, 1, 1,
 };
 bool visible[MAPX * MAPY] = { false };
+bool expandable[MAPX * MAPY] = { false };
 
 float brightness[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
 float combined[MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID)][CHANNELS];
@@ -256,7 +273,7 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
     float light;
     int i, color;
     for (color=0;color<CHANNELS;color++) {
-        for (i = 0; i< MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
+        for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
             bright_arr[i][color] = 0;
     }
     double angle, dist;
@@ -276,9 +293,9 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
                 light = intens / (distX * distX + distY * distY) * mult;
                 if (light > 1)
                     light = 1;
-                bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][red] = light * r;
-                bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][green] = light * g;
-                bright_arr[(tileY) * MAPY * (TILE / LIGHT_GRID) + tileX][blue] = light * b;
+                bright_arr[(tileY) * MAPX * (TILE / LIGHT_GRID) + tileX][red] = light * r;
+                bright_arr[(tileY) * MAPX * (TILE / LIGHT_GRID) + tileX][green] = light * g;
+                bright_arr[(tileY) * MAPX * (TILE / LIGHT_GRID) + tileX][blue] = light * b;
             }
         }
     }
@@ -471,8 +488,102 @@ void check_inputs() {
     glutPostRedisplay();
 }
 
-void DDA() {
+void render() {
+    int ray;
+    line_out_info* render_infoP = &render_info[0];
+    int start, end;
+    int hposition;
+    int tex_index;
+    int bright_index;
+    float floor_ray;
+    float textureY;
+    float deltatextureY;
+    float offset;
     float r, g, b;
+    for (ray=0;ray<RES;ray++) {
+        if (show_map) {
+            glColor3f(0, 1, 0);
+            glLineWidth(1);
+            glBegin(GL_LINES);
+            glVertex2i(playerX / TILE * MAP_SCALE, playerY / TILE * MAP_SCALE);
+            glVertex2i(render_infoP->rayX / TILE * MAP_SCALE, render_infoP->rayY / TILE * MAP_SCALE);
+            glEnd();
+        }
+
+        deltatextureY = 64.0 / render_infoP->l_height;
+        offset = 0.0f;
+        if (render_infoP->l_height > HEIGHT) {
+            start = 0;
+            end = HEIGHT;
+            offset = (render_infoP->l_height - HEIGHT) / 2.0;
+        }
+        else {
+            start = HEIGHT / 2.0 - 0.5 * render_infoP->l_height;
+            end = HEIGHT / 2.0 + 0.5 * render_infoP->l_height;
+        }
+        textureY = offset * deltatextureY;
+        for (hposition=start; hposition<end;hposition++) {
+            tex_index= (int)((int)(textureY) * TEXWIDTH + render_infoP->textureX);
+            if (render_infoP->isdoor) {
+                r = texture_missing[tex_index][red];
+                g = texture_missing[tex_index][green];
+                b = texture_missing[tex_index][blue];
+            }
+            else {
+                r = texture_one[tex_index][red];
+                g = texture_one[tex_index][green];
+                b = texture_one[tex_index][blue];
+            }
+            bright_index = ((int)render_infoP->rayY>>LIGHT_POW)*MAPX*(TILE/LIGHT_GRID) + ((int)render_infoP->rayX>>LIGHT_POW);
+            if (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID) <= bright_index || bright_index < 0)
+                bright_index = 0;
+            r *= brightness[bright_index][red];
+            g *= brightness[bright_index][green];
+            b *= brightness[bright_index][blue];
+            glColor3f(r, g, b);
+            glPointSize(SCALE);
+            glBegin(GL_POINTS);
+            glVertex2i(ray * SCALE, hposition);
+            glEnd();
+            textureY += deltatextureY;
+        }
+        for (hposition = 0;hposition<HEIGHT - end;hposition++) {
+            floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / render_infoP->correct_fish;
+            tex_index = (int)(floor_ray * render_infoP->Sin + playerY) % 64 * 64 + (int)(floor_ray * render_infoP->Cos + playerX) % 64;
+            if (tex_index > 63 * 64)
+                tex_index = 63*64;
+            r = texture_missing[tex_index][red];
+            g = texture_missing[tex_index][green];
+            b = texture_missing[tex_index][blue];
+            bright_index = ((int)(floor_ray * render_infoP->Sin + playerY)>>LIGHT_POW)*MAPX*(TILE/LIGHT_GRID) + ((int)(floor_ray * render_infoP->Cos + playerX)>>LIGHT_POW);
+            if (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID) <= bright_index || bright_index < 0)
+                bright_index = 0;
+            r *= brightness[bright_index][red];
+            g *= brightness[bright_index][green];
+            b *= brightness[bright_index][blue];
+            glColor3f(r, g, b);
+            glBegin(GL_POINTS);
+            glVertex2i(ray * SCALE, hposition + end);
+            glEnd();
+            /*
+            r = texture_missing[tex_index][red] / 2.0;
+            g = texture_missing[tex_index][green] / 2.0;
+            b = texture_missing[tex_index][blue];
+            */
+            r = g = b = 1;
+            r *= brightness[bright_index][red];
+            g *= brightness[bright_index][green];
+            b *= brightness[bright_index][blue];
+            glColor3f(r, g, b);
+            glBegin(GL_POINTS);
+            glVertex2i(ray * SCALE, start -hposition);
+            glEnd();
+        }
+        render_infoP++;
+    }
+}
+
+void DDA() {
     int dofH = DOF;
     int dofV = DOF;
     float deltaYV, deltaYH;
@@ -482,7 +593,9 @@ void DDA() {
     float deltadistH, deltadistV;
     int ray, i;
     for (i=0;i<MAPX*MAPY;i++)
-        visible[i] = false;
+        visible[i] = expandable[i] = false;
+    visible[(((int)playerY)>>TILE_POW) * MAPX + (((int)playerX)>>TILE_POW)] = true;
+    expandable[(((int)playerY)>>TILE_POW) * MAPX + (((int)playerX)>>TILE_POW)] = true;
     for (ray = 0; ray<RES;ray++) {
         float distH = 10000.0f;
         float distV = 10000.0f;
@@ -548,7 +661,6 @@ void DDA() {
             distV = 10000.0f;
             dofV = DOF;
         }
-        visible[(((int)playerY)>>TILE_POW) * MAPX + (((int)playerX)>>TILE_POW)] = true;
         int raymapXH, raymapYH, raymapH;
         int raymapXV, raymapYV, raymapV;
         door_struct* doorH;
@@ -560,16 +672,15 @@ void DDA() {
                 raymapXH = (int)(rayXH)>>TILE_POW;
                 raymapYH = (int)(rayYH)>>TILE_POW;
                 raymapH = raymapXH + raymapYH * MAPX;
+                if (raymapH > 0 && raymapH < MAPX * MAPY && !visible[raymapH]) {
+                    visible[raymapH] = expandable[raymapH]  = true;
+                }
                 if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 1) {
-                    if (!visible[raymapH])
-                        visible[raymapH] = true;
                     dofH = DOF;
                     doorH = NULL;
                     break;
                 }
                 else if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 3) {
-                    if (!visible[raymapH])
-                        visible[raymapH] = true;
                     doorH = getDoor(raymapXH, raymapYH);
                     if (doorH->x * TILE - doorH->exte + TILE < rayXH + 0.5 * deltaXH) {
                         dofH = DOF;
@@ -579,8 +690,6 @@ void DDA() {
                         raymapXH = (int)(rayXH)>>TILE_POW;
                         raymapYH = (int)(rayYH)>>TILE_POW;
                         raymapH = raymapXH + raymapYH * MAPX;
-                        if (raymapH > 0 && raymapH < MAPX * MAPY && !visible[raymapH])
-                            visible[raymapH] = true;
                         break;
                     }
                     else {
@@ -591,8 +700,6 @@ void DDA() {
                     }
                 }
                 else {
-                    if (raymapH > 0 && raymapH < MAPX * MAPY && !visible[raymapH])
-                        visible[raymapH] = true;
                     rayXH += deltaXH;
                     rayYH += deltaYH;
                     distH += deltadistH;
@@ -603,16 +710,15 @@ void DDA() {
                 raymapXV = (int)(rayXV)>>TILE_POW;
                 raymapYV = (int)(rayYV)>>TILE_POW;
                 raymapV = raymapXV + raymapYV * MAPX;
+                if (raymapV > 0 && raymapV < MAPX * MAPY && !visible[raymapV]) {
+                    visible[raymapV] = expandable[raymapV] = true;
+                }
                 if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 1) {
-                    if (!visible[raymapV])
-                        visible[raymapV] = true;
                     dofV = DOF;
                     doorV = NULL;
                     break;
                 }
                 else if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 2) {
-                    if (!visible[raymapV])
-                        visible[raymapV] = true;
                     doorV = getDoor(raymapXV, raymapYV);
                     if (doorV->y * TILE - doorV->exte + TILE < rayYV + 0.5 * deltaYV) {
                         dofV = DOF;
@@ -622,8 +728,6 @@ void DDA() {
                         raymapXV = (int)(rayXV)>>TILE_POW;
                         raymapYV = (int)(rayYV)>>TILE_POW;
                         raymapV = raymapXV + raymapYV * MAPX;
-                        if (raymapV > 0 && raymapV < MAPX * MAPY && !visible[raymapV])
-                            visible[raymapV] = true;
                         break;
                     }
                     else {
@@ -634,8 +738,6 @@ void DDA() {
                     }
                 }
                 else {
-                    if (raymapV > 0 && raymapV < MAPX * MAPY && !visible[raymapV])
-                        visible[raymapV] = true;
                     rayXV += deltaXV;
                     rayYV += deltaYV;
                     distV += deltadistV;
@@ -646,7 +748,6 @@ void DDA() {
                 break;
         }
 
-        
         /*
         int j;
         if (newkeys.l) {
@@ -660,130 +761,44 @@ void DDA() {
         }
         */
 
-        if (show_map) {
-            drawMap();
-            if (distV <= distH) {
-                glColor3f(0, 1, 0);
-                glLineWidth(1);
-                glBegin(GL_LINES);
-                glVertex2i(playerX / TILE * MAP_SCALE, playerY / TILE * MAP_SCALE);
-                glVertex2i(rayXV / TILE * MAP_SCALE, rayYV / TILE * MAP_SCALE);
-                glEnd();
-            }
-            else {
-                glColor3f(0, 0, 1);
-                glLineWidth(1);
-                glBegin(GL_LINES);
-                glVertex2i(playerX / TILE * MAP_SCALE, playerY / TILE * MAP_SCALE);
-                glVertex2i(rayXH / TILE * MAP_SCALE, rayYH / TILE * MAP_SCALE);
-                glEnd();
-            }
-        }
 
 
         float textureX;
         if (distV <= distH) {
-            distH = distV;
             if (doorV == NULL) {
+                render_info[ray].isdoor = false;
                 if (Cos > 0)
-                    textureX = (int)rayYV % 64;
+                    render_info[ray].textureX = (int)rayYV % 64;
                 else
-                    textureX = 63 - (int)rayYV % 64;
-            }
-            else
-                textureX = -64 + (int)rayYV % 64 + ceil(doorV->exte);
-            doorH = doorV;
-            rayYH = rayYV;
-            rayXH = rayXV;
-        }
-        else {
-            if (doorH == NULL) {
-                if (Sin < 0)
-                    textureX = (int)rayXH % 64;
-                else
-                    textureX = 63 - (int)rayXH % 64;
-            }
-            else
-                textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
-        }
-
-        float light_dist = distH;
-        distH *= correct_fish;
-        float line_height = (64.0 * HEIGHT) / distH;
-        int start, end;
-        float deltatextureY = 64.0 / line_height;
-        float offset = 0.0;
-        if (line_height > HEIGHT) {
-            start = 0;
-            end = HEIGHT;
-            offset = (line_height - HEIGHT) / 2.0;
-        }
-        else {
-            start = HEIGHT / 2.0 - 0.5 * line_height;
-            end = HEIGHT / 2.0 + 0.5 * line_height;
-        }
-        int hposition;
-        float textureY = offset * deltatextureY;
-        int tex_index;
-        int bright_index;
-        for (hposition=start; hposition<end;hposition++) {
-            tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
-            if (doorH == NULL) {
-                r = texture_one[tex_index][red];
-                g = texture_one[tex_index][green];
-                b = texture_one[tex_index][blue];
+                    render_info[ray].textureX = 63 - (int)rayYV % 64;
             }
             else {
-                r = texture_missing[tex_index][red];
-                g = texture_missing[tex_index][green];
-                b = texture_missing[tex_index][blue];
+                render_info[ray].textureX = -64 + (int)rayYV % 64 + ceil(doorV->exte);
+                render_info[ray].isdoor = true;
             }
-            bright_index = ((int)rayYH>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)rayXH>>LIGHT_POW);
-            if (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID) <= bright_index || bright_index < 0)
-                bright_index = 0;
-            r *= brightness[bright_index][red];
-            g *= brightness[bright_index][green];
-            b *= brightness[bright_index][blue];
-            glColor3f(r, g, b);
-            glPointSize(SCALE);
-            glBegin(GL_POINTS);
-            glVertex2i(ray * SCALE, hposition);
-            glEnd();
-            textureY += deltatextureY;
+            render_info[ray].l_height = (float)(TILE * HEIGHT) / distV / correct_fish;
+            render_info[ray].rayY = rayYV;
+            render_info[ray].rayX = rayXV;
         }
-        float floor_ray;
-        for (hposition = 0;hposition<HEIGHT - end;hposition++) {
-            floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / correct_fish;
-            tex_index = (int)(floor_ray * Sin + playerY) % 64 * 64 + (int)(floor_ray * Cos + playerX) % 64;
-            if (tex_index > 63 * 64)
-                tex_index = 63*64;
-            r = texture_missing[tex_index][red];
-            g = texture_missing[tex_index][green];
-            b = texture_missing[tex_index][blue];
-            bright_index = ((int)(floor_ray * Sin + playerY)>>LIGHT_POW)*MAPY*(TILE/LIGHT_GRID) + ((int)(floor_ray * Cos + playerX)>>LIGHT_POW);
-            if (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID) <= bright_index || bright_index < 0)
-                bright_index = 0;
-            r *= brightness[bright_index][red];
-            g *= brightness[bright_index][green];
-            b *= brightness[bright_index][blue];
-            glColor3f(r, g, b);
-            glBegin(GL_POINTS);
-            glVertex2i(ray * SCALE, hposition + end);
-            glEnd();
-            /*
-            r = texture_missing[tex_index][red] / 2.0;
-            g = texture_missing[tex_index][green] / 2.0;
-            b = texture_missing[tex_index][blue];
-            */
-            r = g = b = 1;
-            r *= brightness[bright_index][red];
-            g *= brightness[bright_index][green];
-            b *= brightness[bright_index][blue];
-            glColor3f(r, g, b);
-            glBegin(GL_POINTS);
-            glVertex2i(ray * SCALE, start -hposition);
-            glEnd();
+        else {
+            if (doorH == NULL) {
+                render_info[ray].isdoor = false;
+                if (Sin < 0)
+                    render_info[ray].textureX = (int)rayXH % 64;
+                else
+                    render_info[ray].textureX = 63 - (int)rayXH % 64;
+            }
+            else {
+                render_info[ray].textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
+                render_info[ray].isdoor = true;
+            }
+            render_info[ray].l_height = (float)(TILE * HEIGHT) / distH / correct_fish;
+            render_info[ray].rayY = rayYH;
+            render_info[ray].rayX = rayXH;
         }
+        render_info[ray].correct_fish = correct_fish;
+        render_info[ray].Cos = Cos;
+        render_info[ray].Sin = Sin;
     }
 }
 
@@ -813,17 +828,40 @@ void doorf() {
     }
 }
 
+void expand_visible() {
+    int i, j, index;
+    int limit = MAPX * MAPY;
+    for (i=0;i<MAPY;i++) {
+        for (j=0;j<MAPX;j++) {
+            index = i * MAPX + j;
+            if (visible[index] && expandable[index]) {
+                if (index - 1 < limit && index - 1>0)
+                    visible[index - 1] = true;
+                if (index + 1 < limit && index + 1>0)
+                    visible[index + 1] = true;
+                if (index - MAPX < limit && index - MAPX>0)
+                    visible[index - MAPX] = true;
+                if (index + MAPX < limit && index + MAPX>0)
+                    visible[index + MAPX] = true;
+            }
+        }
+    }
+}
+
 void display() {
     current_frame = glutGet(GLUT_ELAPSED_TIME);
     delta_frames = current_frame - last_frame;
     last_frame = glutGet(GLUT_ELAPSED_TIME);
-
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
     //gen_light(playerX, playerY, 10000.0f, player_light, 1, 1, 1, false);
     //combine_light(player_light, true);
     DDA();
+    expand_visible();
+    render();
+    if (show_map)
+        drawMap();
     glutSwapBuffers();
     //combine_light(player_light, false);
     oldkeys = newkeys;
