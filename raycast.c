@@ -122,8 +122,6 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
     double Sin = sin(angle);
     double Tan = tan(angle);
     double invTan = 1 / Tan;
-    if ((((int)posX)>>TILE_POW) == tileX && (((int)posY)>>TILE_POW) == tileY)
-        return true;
 
     //up/down
     if (Sin < -0.0001) {
@@ -176,6 +174,16 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
         distV = 10000.0f;
         dofV = DOF;
     }
+    /*
+    if (distH < distV) { 
+        if ((distH + deltadistH / (TILE / LIGHT_GRID) >= dist && distH != 10000.0f))
+            return true;
+    }
+    else if ((distV + deltadistV / (TILE / LIGHT_GRID) >= dist && distV != 10000.0f))
+        return true;
+    */
+    
+    
     int raymapXH, raymapYH, raymapH;
     int raymapXV, raymapYV, raymapV;
     door_struct* doorH;
@@ -186,7 +194,7 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
         if (dofH < DOF && distH <= distV) {
             raymapXH = (int)(rayXH)>>TILE_POW;
             raymapYH = (int)(rayYH)>>TILE_POW;
-            if ((distH + sqrt(LIGHT_GRID * LIGHT_GRID * 2)>= dist && distH != 10000.0f))
+            if ((distH + deltadistH / (TILE / LIGHT_GRID) + 0.55 * LIGHT_GRID >= dist && distH != 10000.0f)) //0.55 * LIGHT_GRID is there to correct inprecisions
                 return true;
             raymapH = raymapXH + raymapYH * MAPX;
             if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 1) {
@@ -204,7 +212,7 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
         else if (dofV < DOF && distV < distH) {
             raymapXV = (int)(rayXV)>>TILE_POW;
             raymapYV = (int)(rayYV)>>TILE_POW;
-            if ((distV + sqrt(LIGHT_GRID * LIGHT_GRID * 2) >= dist && distV != 10000.0f))
+            if ((distV + deltadistV / (TILE / LIGHT_GRID) + 0.55 * LIGHT_GRID >= dist && distV != 10000.0f))
                 return true;
             raymapV = raymapXV + raymapYV * MAPX;
             if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 1) {
@@ -256,14 +264,14 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
     for (tileY = startY;tileY<endY;tileY++) {
         for (tileX = startX;tileX<endX;tileX++) {
             if (visible[(tileY>>(TILE_POW-LIGHT_POW))*MAPX + (tileX>>(TILE_POW-LIGHT_POW))] || is_static) {
-                distX = tileX * LIGHT_GRID - lightX;
-                distY = tileY * LIGHT_GRID - lightY;
+                distX = (tileX + 0.5) * LIGHT_GRID - lightX;
+                distY = (tileY + 0.5) * LIGHT_GRID - lightY;
                 dist = sqrt(distX * distX + distY * distY);
                 angle = atan(distY / distX);
                 if (distX < 0)
                     angle += PI;
                 mult = 0.25;
-                if (!is_static || path_free(lightX, lightY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist))
+                if (path_free(lightX, lightY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist))
                     mult = 1;
                 light = intens / (distX * distX + distY * distY) * mult;
                 if (light > 1)
@@ -813,11 +821,11 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
-    //combine_light(player_light, false);
-    //gen_light((int)(playerX), (int)(playerY), 1000.0f, player_light, 1, 1, 1, false);
+    //gen_light(playerX, playerY, 10000.0f, player_light, 1, 1, 1, false);
     //combine_light(player_light, true);
     DDA();
     glutSwapBuffers();
+    //combine_light(player_light, false);
     oldkeys = newkeys;
 }
 
