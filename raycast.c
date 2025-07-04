@@ -11,6 +11,8 @@
 #define FOV 0.5 * PI
 #define SHIFT FOV / 2
 #define DOORN 2
+#define LIGHT_NUM 1
+#define SPRITE_NUM 1
 #define MAP_SCALE 16
 #define LIGHT_GRID 2
 
@@ -77,6 +79,27 @@ typedef struct {
 } line_out_info;
 line_out_info render_info[RES];
 
+typedef struct {
+    float posX;
+    float posY;
+    float intens;
+    unsigned is_static : 1;
+    float r;
+    float g;
+    float b;
+} light_source;
+light_source lights[LIGHT_NUM];
+float light_maps[LIGHT_NUM][LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS];
+
+typedef struct {
+    float posX;
+    float posY;
+    float direction;
+    unsigned is_static : 1;
+    light_source* source;
+} sprite_strct;
+sprite_strct sprites[SPRITE_NUM];
+
 float playerX, playerY, playerAngle;
 bool show_map = true;
 float move_direction_v, move_direction_h;
@@ -94,7 +117,7 @@ int map[MAPX * MAPY] =
     1, 3, 1, 0, 0, 1, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 1, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 1,
@@ -107,7 +130,6 @@ bool expandable[MAPX * MAPY] = { false };
 float brightness[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
 float combined[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
 //float player_light[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
-float lamp[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -215,7 +237,7 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
         if (dofH < DOF && distH <= distV) {
             raymapXH = (int)(rayXH)>>TILE_POW;
             raymapYH = (int)(rayYH)>>TILE_POW;
-            if ((distH + deltadistH / deltadist_mult + 0.55 * LIGHT_GRID >= dist && distH != 10000.0f)) //0.55 * LIGHT_GRID is there to correct inprecisions
+            if ((distH + deltadistH / deltadist_mult >= dist && distH != 10000.0f))
                 return true;
             raymapH = raymapXH + raymapYH * MAPX;
             if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 1) {
@@ -233,7 +255,7 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
         else if (dofV < DOF && distV < distH) {
             raymapXV = (int)(rayXV)>>TILE_POW;
             raymapYV = (int)(rayYV)>>TILE_POW;
-            if ((distV + deltadistV / deltadist_mult + 0.55 * LIGHT_GRID >= dist && distV != 10000.0f))
+            if ((distV + deltadistV / deltadist_mult >= dist && distV != 10000.0f))
                 return true;
             raymapV = raymapXV + raymapYV * MAPX;
             if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 1) {
@@ -254,31 +276,32 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
     return false;
 }
 
-void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS], float r, float g, float b, bool is_static) {
+void gen_light(light_source light, float light_map[][CHANNELS]) {
+//int lightX, int lightY, float intens, float bright_arr[][CHANNELS], float r, float g, float b, bool is_static;
     int startX, endX;
     int startY, endY;
-    float max_dist = sqrt(intens / MIN_BRIGHTNESS);
-    startX = (int)(lightX - max_dist)>>LIGHT_POW;
+    float max_dist = sqrt(light.intens / MIN_BRIGHTNESS);
+    startX = (int)(light.posX- max_dist)>>LIGHT_POW;
     if (startX < 0)
         startX = 0;
-    endX = (int)(lightX + max_dist)>>LIGHT_POW;
+    endX = (int)(light.posX+ max_dist)>>LIGHT_POW;
     if (endX > MAPX * (TILE / LIGHT_GRID))
         endX = MAPX * (TILE / LIGHT_GRID);
 
-    startY = (int)(lightY - max_dist)>>LIGHT_POW;
+    startY = (int)(light.posY- max_dist)>>LIGHT_POW;
     if (startY < 0)
         startY = 0;
-    endY = (int)(lightY + max_dist)>>LIGHT_POW;
+    endY = (int)(light.posY+ max_dist)>>LIGHT_POW;
     if (endY > MAPY * (TILE / LIGHT_GRID))
         endY = MAPY * (TILE / LIGHT_GRID);
 
     int tileY, tileX;
     float distX, distY;
-    float light;
+    float bright;
     int i, color;
     for (color=0;color<CHANNELS;color++) {
         for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
-            bright_arr[i][color] = 0;
+            light_map[i][color] = 0;
     }
     double angle, dist;
     float mult;
@@ -287,7 +310,7 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
     int corner;
     for (tileY = startY;tileY<endY;tileY++) {
         for (tileX = startX;tileX<endX;tileX++) {
-            if (visible[(tileY>>(TILE_POW-LIGHT_POW))*MAPX + (tileX>>(TILE_POW-LIGHT_POW))] || is_static) {
+            if (visible[(tileY>>(TILE_POW-LIGHT_POW))*MAPX + (tileX>>(TILE_POW-LIGHT_POW))] || light.is_static == 1) {
                 corner = -1;
                 bright_index = (tileY) * MAPX * (TILE / LIGHT_GRID) + tileX;
                 lightXremain = tileX % (TILE / LIGHT_GRID);
@@ -296,79 +319,79 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
                     //btm rght
                     if (lightXremain == (TILE / LIGHT_GRID) - 1 && lightYremain == (TILE / LIGHT_GRID) - 1) {
                         corner = 3;
-                        distX = (tileX + 0.875) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.125) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.875) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.125) * LIGHT_GRID - light.posY;
                         //bright_index = LIGHT_MAP_L + 4 * (tileY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (tileX>>(TILE_POW - LIGHT_POW)) + 3;
                     }
 
                     //btm lft
                     else if (lightXremain == 0 && lightYremain == (TILE / LIGHT_GRID) - 1) {
                         corner = 2;
-                        distX = (tileX + 0.125) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.125) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.125) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.125) * LIGHT_GRID - light.posY;
                         //bright_index = LIGHT_MAP_L + 4 * (tileY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (tileX>>(TILE_POW - LIGHT_POW)) + 2;
                     }
 
                     //tp rght
                     else if (lightXremain == (TILE / LIGHT_GRID) - 1 && lightYremain == 0) {
                         corner = 1;
-                        distX = (tileX + 0.875) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.875) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.875) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.875) * LIGHT_GRID - light.posY;
                         //bright_index = LIGHT_MAP_L + 4 * (tileY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (tileX>>(TILE_POW - LIGHT_POW)) + 1;
                     }
 
                     //tp lft
                     else if (lightXremain == 0 && lightYremain == 0) {
                         corner = 0;
-                        distX = (tileX + 0.125) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.875) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.125) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.875) * LIGHT_GRID - light.posY;
                         //bright_index = LIGHT_MAP_L + 4 * (tileY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (tileX>>(TILE_POW - LIGHT_POW));
                     }
                     else {
-                        distX = (tileX + 0.5) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.5) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.5) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.5) * LIGHT_GRID - light.posY;
                     }
                 }
                 else {
-                    distX = (tileX + 0.5) * LIGHT_GRID - lightX;
-                    distY = (tileY + 0.5) * LIGHT_GRID - lightY;
+                    distX = (tileX + 0.5) * LIGHT_GRID - light.posX;
+                    distY = (tileY + 0.5) * LIGHT_GRID - light.posY;
                 }
                 dist = sqrt(distX * distX + distY * distY);
                 angle = atan(distY / distX);
                 if (distX < 0)
                     angle += PI;
                 mult = 0.25;
-                if (path_free(lightX, lightY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist, corner))
+                if (path_free(light.posX, light.posY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist, corner))
                     mult = 1;
-                light = intens / (distX * distX + distY * distY) * mult;
-                if (light > 1)
-                    light = 1;
-                bright_arr[bright_index][red] = light * r;
-                bright_arr[bright_index][green] = light * g;
-                bright_arr[bright_index][blue] = light * b;
+                bright = light.intens / (distX * distX + distY * distY) * mult;
+                if (bright > 1)
+                    bright = 1;
+                light_map[bright_index][red] = bright * light.r;
+                light_map[bright_index][green] = bright * light.g;
+                light_map[bright_index][blue] = bright * light.b;
 
                 if (corner>=0) {
                     if (corner == 3) {
-                        distX = (tileX + 0.125) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.875) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.125) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.875) * LIGHT_GRID - light.posY;
                     }
 
                     //btm lft
                     else if (corner == 2) {
-                        distX = (tileX + 0.875) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.875) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.875) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.875) * LIGHT_GRID - light.posY;
                     }
 
                     //tp rght
                     else if (corner == 1) {
-                        distX = (tileX + 0.125) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.125) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.125) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.125) * LIGHT_GRID - light.posY;
                     }
 
                     //tp lft
                     else if (corner == 0) {
-                        distX = (tileX + 0.875) * LIGHT_GRID - lightX;
-                        distY = (tileY + 0.125) * LIGHT_GRID - lightY;
+                        distX = (tileX + 0.875) * LIGHT_GRID - light.posX;
+                        distY = (tileY + 0.125) * LIGHT_GRID - light.posY;
                     }
                     bright_index = LIGHT_MAP_L + 4 * (tileY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (tileX>>(TILE_POW - LIGHT_POW)) + corner;
                     dist = sqrt(distX * distX + distY * distY);
@@ -376,14 +399,14 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
                     if (distX < 0)
                         angle += PI;
                     mult = 0.25;
-                    if (path_free(lightX, lightY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist, corner))
+                    if (path_free(light.posX, light.posY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist, corner))
                         mult = 1;
-                    light = intens / (distX * distX + distY * distY) * mult;
-                    if (light > 1)
-                        light = 1;
-                    bright_arr[bright_index][red] = light * r;
-                    bright_arr[bright_index][green] = light * g;
-                    bright_arr[bright_index][blue] = light * b;
+                    bright = light.intens / (distX * distX + distY * distY) * mult;
+                    if (bright > 1)
+                        bright = 1;
+                    light_map[bright_index][red] = bright * light.r;
+                    light_map[bright_index][green] = bright * light.g;
+                    light_map[bright_index][blue] = bright * light.b;
                 }
             }
         }
@@ -392,7 +415,7 @@ void gen_light(int lightX, int lightY, float intens, float bright_arr[][CHANNELS
     if (newkeys.l) {
         for (tileY = 0; tileY < MAPY * (TILE / LIGHT_GRID);tileY++) {
             for (tileX = 0; tileX < MAPX * (TILE / LIGHT_GRID);tileX++) {
-                printf("%0.2f ", bright_arr[tileY * MAPY * (TILE / LIGHT_GRID) + tileX]);
+                printf("%0.2f ", light.light_map[tileY * MAPY * (TILE / LIGHT_GRID) + tileX]);
             }
             printf("\n");
         }
@@ -522,6 +545,14 @@ void check_inputs() {
         movef(PLAYER_SPEED, move_direction_v, &playerX, &playerY, 0.2f);
     }
 
+    sprites[0].direction += 0.00125 * delta_frames + PI;
+    radian_change(&sprites[0].direction);
+    movef(PLAYER_SPEED / 4, sprites[0].direction, &sprites[0].posX, &sprites[0].posY, 0.2f);
+    sprites[0].direction -= PI;
+    radian_change(&sprites[0].direction);
+    sprites[0].source->posX = sprites[0].posX;
+    sprites[0].source->posY = sprites[0].posY;
+
     float rayXH, rayYH, distH, rayXV, rayYV, distV;
     float Sin = sin(playerAngle);
     float Cos = cos(playerAngle);
@@ -615,6 +646,35 @@ void render() {
         int lightXremain, lightYremain;
         float line_diff;
         float line_sum;
+
+        lightX = (int)render_infoP->rayX>>LIGHT_POW;
+        lightY = (int)render_infoP->rayY>>LIGHT_POW;
+        lightXremain = lightX % (TILE / LIGHT_GRID);
+        lightYremain = lightY % (TILE / LIGHT_GRID);
+        line_diff = render_infoP->rayX - (lightX<<LIGHT_POW) - render_infoP->rayY + (lightY<<LIGHT_POW);
+        line_sum = render_infoP->rayX - (lightX<<LIGHT_POW) + render_infoP->rayY - (lightY<<LIGHT_POW);
+
+        //btm rght btm
+        if (lightXremain == (TILE / LIGHT_GRID) - 1 && lightYremain == (TILE / LIGHT_GRID) - 1 && line_diff<0)
+            bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW)) + 3;
+
+        //btm lft btm
+        else if (lightXremain == 0 && lightYremain == (TILE / LIGHT_GRID) - 1 && line_sum>LIGHT_GRID)
+            bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW)) + 2;
+
+        //tp rght tp
+        else if (lightXremain == (TILE / LIGHT_GRID) - 1 && lightYremain == 0 && line_sum<LIGHT_GRID)
+            bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW)) + 1;
+
+        //tp lft tp
+        else if (lightXremain == 0 && lightYremain == 0 && line_diff>0)
+            bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW));
+
+        else
+            bright_index = lightY*MAPX*(TILE/LIGHT_GRID) + lightX;
+        if (LIGHT_MAP_L + 4 * MAPX * MAPY <= bright_index || bright_index < 0)
+            bright_index = 0;
+
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + render_infoP->textureX);
             if (render_infoP->isdoor) {
@@ -627,33 +687,7 @@ void render() {
                 g = texture_one[tex_index][green];
                 b = texture_one[tex_index][blue];
             }
-            lightX = (int)render_infoP->rayX>>LIGHT_POW;
-            lightY = (int)render_infoP->rayY>>LIGHT_POW;
-            lightXremain = lightX % (TILE / LIGHT_GRID);
-            lightYremain = lightY % (TILE / LIGHT_GRID);
-            line_diff = render_infoP->rayX - (lightX<<LIGHT_POW) - render_infoP->rayY + (lightY<<LIGHT_POW);
-            line_sum = render_infoP->rayX - (lightX<<LIGHT_POW) + render_infoP->rayY - (lightY<<LIGHT_POW);
 
-            //btm rght btm
-            if (lightXremain == (TILE / LIGHT_GRID) - 1 && lightYremain == (TILE / LIGHT_GRID) - 1 && line_diff<0)
-                bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW)) + 3;
-
-            //btm lft btm
-            else if (lightXremain == 0 && lightYremain == (TILE / LIGHT_GRID) - 1 && line_sum>LIGHT_GRID)
-                bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW)) + 2;
-
-            //tp rght tp
-            else if (lightXremain == (TILE / LIGHT_GRID) - 1 && lightYremain == 0 && line_sum<LIGHT_GRID)
-                bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW)) + 1;
-
-            //tp lft tp
-            else if (lightXremain == 0 && lightYremain == 0 && line_diff>0)
-                bright_index = LIGHT_MAP_L + 4 * (lightY>>(TILE_POW - LIGHT_POW)) * MAPX + 4 * (lightX>>(TILE_POW - LIGHT_POW));
-
-            else
-                bright_index = lightY*MAPX*(TILE/LIGHT_GRID) + lightX;
-            if (LIGHT_MAP_L + 4 * MAPX * MAPY <= bright_index || bright_index < 0)
-                bright_index = 0;
             r *= brightness[bright_index][red];
             g *= brightness[bright_index][green];
             b *= brightness[bright_index][blue];
@@ -975,14 +1009,15 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
-    //gen_light(playerX, playerY, 10000.0f, player_light, 1, 1, 1, false);
-    //combine_light(player_light, true);
+    gen_light(*sprites[0].source, light_maps[0]);
+    combine_light(light_maps[0], true);
     DDA();
     expand_visible();
     render();
     if (show_map)
         drawMap();
     glutSwapBuffers();
+    combine_light(light_maps[0], false);
     //combine_light(player_light, false);
     oldkeys = newkeys;
 }
@@ -1038,17 +1073,54 @@ void keyup(unsigned char key, int x, int y) {
 }
 
 void init() {
+    light_source stat_light;
+    float init_light_map[LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS];
     glClearColor(0.3,0.3,0.3,0);
     gluOrtho2D(0,1024,HEIGHT,0);
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
-    gen_light(3.5*TILE, 2.5*TILE, 10000.0f, lamp, 1, 0, 0, true);
-    combine_light(lamp, true);
-    gen_light(5.5 * TILE, 4.5 * TILE, 10000.0f, lamp, 0, 1, 0, true);
-    combine_light(lamp, true);
-    gen_light(3.5 * TILE, 4.5 * TILE, 10000.0f, lamp, 0, 0, 1, true);
-    combine_light(lamp, true);
+
+    stat_light.posX = 3.51 * TILE;
+    stat_light.posY = 2.51 * TILE;
+    stat_light.intens = 10000.0f;
+    stat_light.is_static = 1;
+    stat_light.r = 1;
+    stat_light.g = 0;
+    stat_light.b = 0;
+
+    gen_light(stat_light, init_light_map);
+    combine_light(init_light_map, true);
+
+    stat_light.posX = 5.5 * TILE;
+    stat_light.posY = 4.5 * TILE;
+    stat_light.r = 0;
+    stat_light.g = 1;
+    stat_light.b = 0;
+    gen_light(stat_light, init_light_map);
+    combine_light(init_light_map, true);
+
+    stat_light.posX = 3.5 * TILE;
+    stat_light.posY = 4.5 * TILE;
+    stat_light.r = 0;
+    stat_light.g = 0;
+    stat_light.b = 1;
+    gen_light(stat_light, init_light_map);
+    combine_light(init_light_map, true);
+
+    sprites[0].posX = 3.5 * TILE;
+    sprites[0].posY = 7.5 * TILE;
+    sprites[0].direction = 0.0f;
+    sprites[0].is_static = 0;
+    sprites[0].source = &lights[0];
+    sprites[0].source->posX = sprites[0].posX;
+    sprites[0].source->posY = sprites[0].posY;
+    sprites[0].source->intens = 10000.0f;
+    sprites[0].source->is_static = 0;
+    sprites[0].source->r = 1;
+    sprites[0].source->g = 1;
+    sprites[0].source->b = 1;
+
     FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
     if (fptr != NULL) {
