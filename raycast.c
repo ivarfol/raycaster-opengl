@@ -14,9 +14,9 @@
 #define LIGHT_NUM 1
 #define SPRITE_NUM 1
 #define MAP_SCALE 16
-#define LIGHT_GRID 2
+#define LIGHT_GRID 4
 
-#define LIGHT_POW 1
+#define LIGHT_POW 2
 #define TILE_POW 6
 
 #define MIN_LIGHT_DIST 128
