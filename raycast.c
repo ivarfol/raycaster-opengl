@@ -14,9 +14,9 @@
 #define LIGHT_NUM 1
 #define SPRITE_NUM 1
 #define MAP_SCALE 16
-#define LIGHT_GRID 4
+#define LIGHT_GRID 2
 
-#define LIGHT_POW 2
+#define LIGHT_POW 1
 #define TILE_POW 6
 
 #define MIN_LIGHT_DIST 128
@@ -89,7 +89,7 @@ typedef struct {
     float b;
 } light_source;
 light_source lights[LIGHT_NUM];
-float light_maps[LIGHT_NUM][LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS];
+float light_maps[LIGHT_NUM][LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS] = {0};
 
 typedef struct {
     float posX;
@@ -127,8 +127,8 @@ int map[MAPX * MAPY] =
 bool visible[MAPX * MAPY] = { false };
 bool expandable[MAPX * MAPY] = { false };
 
-float brightness[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
-float combined[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
+float stationary[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
+float brightness[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
 //float player_light[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
 
 void radian_change(float *a) {
@@ -424,25 +424,14 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
     */
 }
 
-void combine_light(float light[][CHANNELS], bool add) {
+void combine_light(float light_one[][CHANNELS], float light_two[][CHANNELS]) {
     int i, color;
     for (color=0;color<CHANNELS;color++) {
         for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
-            if (add) {
-                combined[i][color] += light[i][color];
-                if (combined[i][color] > 1)
-                    brightness[i][color] = 1;
-                else 
-                    brightness[i][color] = combined[i][color];
-            }
-            else {
-                combined[i][color] -= light[i][color];
-                if (combined[i][color] < 0)
-                    brightness[i][color] = 0;
-                else 
-                    brightness[i][color] = combined[i][color];
-            }
-            //printf("%0.2f ", brightness[i]);
+            light_one[i][color] += light_two[i][color];
+            if (light_one[i][color] > 1)
+                light_one[i][color] = 1;
+            //printf("%0.2f ", light_one[i][color]);
         }
         //printf("\n");
     }
@@ -1010,14 +999,21 @@ void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
     gen_light(*sprites[0].source, light_maps[0]);
-    combine_light(light_maps[0], true);
+
+    int i, color;
+    for (color=0;color<CHANNELS;color++) {
+        for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
+            brightness[i][color] = stationary[i][color];
+        }
+    }
+
+    combine_light(brightness, light_maps[0]);
     DDA();
     expand_visible();
     render();
     if (show_map)
         drawMap();
     glutSwapBuffers();
-    combine_light(light_maps[0], false);
     //combine_light(player_light, false);
     oldkeys = newkeys;
 }
@@ -1089,8 +1085,7 @@ void init() {
     stat_light.g = 0;
     stat_light.b = 0;
 
-    gen_light(stat_light, init_light_map);
-    combine_light(init_light_map, true);
+    gen_light(stat_light, stationary);
 
     stat_light.posX = 5.5 * TILE;
     stat_light.posY = 4.5 * TILE;
@@ -1098,7 +1093,7 @@ void init() {
     stat_light.g = 1;
     stat_light.b = 0;
     gen_light(stat_light, init_light_map);
-    combine_light(init_light_map, true);
+    combine_light(stationary, init_light_map);
 
     stat_light.posX = 3.5 * TILE;
     stat_light.posY = 4.5 * TILE;
@@ -1106,7 +1101,7 @@ void init() {
     stat_light.g = 0;
     stat_light.b = 1;
     gen_light(stat_light, init_light_map);
-    combine_light(init_light_map, true);
+    combine_light(stationary, init_light_map);
 
     sprites[0].posX = 3.5 * TILE;
     sprites[0].posY = 7.5 * TILE;
@@ -1140,11 +1135,11 @@ void init() {
         printf("Failed to open file tile.ppm\n");
         exit(1);
     }
-    int i;
     float base_angle = 0.5 * PI - SHIFT;
     radian_change(&base_angle);
     float baseCos = cos(base_angle);
     float side = RES * sin(base_angle) / sin(FOV);
+    int i;
     for (i = 0; i<RES; i++)
         angles[i] = acos((side - i * baseCos) / sqrt(side * side + i * i - 2 * side * i * baseCos));
     doors[0].x = 5;
