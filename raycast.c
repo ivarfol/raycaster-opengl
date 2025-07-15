@@ -6,8 +6,8 @@
 #define PI 3.1415926535
 #define PLAYER_SPEED 5
 #define DOF 18
-#define RES 512
-#define SCALE 2
+#define RES 256
+#define SCALE 4
 #define FOV 0.5 * PI
 #define SHIFT (FOV / 2)
 #define DOORN 2
@@ -39,9 +39,9 @@
 
 #define LIGHT_MAP_L (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID))
 
-#define AMBIENT_R 0.3f
-#define AMBIENT_G 0.3f
-#define AMBIENT_B 0.3f
+#define AMBIENT_R 0.1f
+#define AMBIENT_G 0.1f
+#define AMBIENT_B 0.1f
 
 float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
 float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
@@ -109,7 +109,7 @@ float playerX, playerY, playerAngle;
 bool show_map = true;
 float move_direction_v, move_direction_h;
 //double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
-double floor_const = HEIGHT * RES / 4 / 4/ tan(0.5*PI -SHIFT) ; // aspect 1/2
+double floor_const = HEIGHT * RES / 2 / 4/ tan(0.5*PI -SHIFT) ; // aspect 1/2
 float current_frame = 0.0;
 float delta_frames, last_frame;
 
@@ -372,6 +372,8 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
                 bright = light.intens / (distX * distX + distY * distY) * mult;
                 if (bright > 1)
                     bright = 1;
+                else if (bright < 0)
+                    bright = 1;
                 light_map[bright_index][red] = bright * light.r;
                 light_map[bright_index][green] = bright * light.g;
                 light_map[bright_index][blue] = bright * light.b;
@@ -407,8 +409,11 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
                     mult = 0.25;
                     if (path_free(light.posX, light.posY, tileX>>(TILE_POW - LIGHT_POW), tileY>>(TILE_POW - LIGHT_POW), angle, dist, corner))
                         mult = 1;
+
                     bright = light.intens / (distX * distX + distY * distY) * mult;
                     if (bright > 1)
+                        bright = 1;
+                    else if (bright < 0)
                         bright = 1;
                     light_map[bright_index][red] = bright * light.r;
                     light_map[bright_index][green] = bright * light.g;
@@ -437,8 +442,6 @@ void combine_light(float light_one[][CHANNELS], float light_two[][CHANNELS]) {
             light_one[i][color] += light_two[i][color];
             if (light_one[i][color] > 1)
                 light_one[i][color] = 1;
-            else if (light_one[i][color] < 0)
-                light_one[i][color] = 0;
             //printf("%0.2f ", light_one[i][color]);
         }
         //printf("\n");
@@ -672,6 +675,7 @@ void render() {
         if (LIGHT_MAP_L + 4 * MAPX * MAPY <= bright_index || bright_index < 0)
             bright_index = 0;
 
+        glPointSize(SCALE);
         for (hposition=start; hposition<end;hposition++) {
             tex_index= (int)((int)(textureY) * TEXWIDTH + render_infoP->textureX);
             if (render_infoP->isdoor) {
@@ -689,9 +693,8 @@ void render() {
             g *= brightness[bright_index][green];
             b *= brightness[bright_index][blue];
             glColor3f(r, g, b);
-            glPointSize(SCALE);
             glBegin(GL_POINTS);
-            glVertex2i(ray * SCALE, hposition);
+            glVertex2i(ray * SCALE - SCALE, hposition);
             glEnd();
             textureY += deltatextureY;
         }
@@ -714,7 +717,7 @@ void render() {
             b *= brightness[bright_index][blue];
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
-            glVertex2i(ray * SCALE, hposition + end);
+            glVertex2i(ray * SCALE-SCALE, hposition + end);
             glEnd();
             /*
             r = texture_missing[tex_index][red] / 2.0;
@@ -727,7 +730,7 @@ void render() {
             b *= brightness[bright_index][blue];
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
-            glVertex2i(ray * SCALE, start -hposition);
+            glVertex2i(ray * SCALE-SCALE, start -hposition);
             glEnd();
         }
         render_infoP++;
@@ -1080,7 +1083,7 @@ void init() {
     light_source stat_light;
     float init_light_map[LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS];
     glClearColor(0.3,0.3,0.3,0);
-    gluOrtho2D(0,1024,HEIGHT,0);
+    gluOrtho2D(0,(RES - 2)*SCALE,(HEIGHT - 2)*FLOOR_SCALE,0);
     playerX = 300;
     playerY = 300;
     playerAngle = 0.0f;
@@ -1172,7 +1175,7 @@ void init() {
 int main(int argc, char* argv[]) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(RES * SCALE, HEIGHT * FLOOR_SCALE);
+    glutInitWindowSize((RES - 2) * SCALE, (HEIGHT - 2) * FLOOR_SCALE);
     glutCreateWindow("Raycaster");
     init();
     glutDisplayFunc(display);
