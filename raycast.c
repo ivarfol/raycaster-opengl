@@ -6,10 +6,10 @@
 #define PI 3.1415926535
 #define PLAYER_SPEED 5
 #define DOF 18
-#define RES 256
-#define SCALE 4
+#define RES 512
+#define SCALE 2
 #define FOV 0.5 * PI
-#define SHIFT FOV / 2
+#define SHIFT (FOV / 2)
 #define DOORN 2
 #define LIGHT_NUM 1
 #define SPRITE_NUM 1
@@ -28,6 +28,7 @@
 
 #define PLHEIGHT 32
 
+#define FLOOR_SCALE 1
 #define HEIGHT 512
 #define MAPX 8
 #define MAPY 12
@@ -37,6 +38,10 @@
 #define LIGHT_POS (4 * TILE) //light source
 
 #define LIGHT_MAP_L (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID))
+
+#define AMBIENT_R 0.3f
+#define AMBIENT_G 0.3f
+#define AMBIENT_B 0.3f
 
 float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
 float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
@@ -103,7 +108,8 @@ sprite_strct sprites[SPRITE_NUM];
 float playerX, playerY, playerAngle;
 bool show_map = true;
 float move_direction_v, move_direction_h;
-double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
+//double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
+double floor_const = HEIGHT * RES / 4 / 4/ tan(0.5*PI -SHIFT) ; // aspect 1/2
 float current_frame = 0.0;
 float delta_frames, last_frame;
 
@@ -426,11 +432,13 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
 
 void combine_light(float light_one[][CHANNELS], float light_two[][CHANNELS]) {
     int i, color;
-    for (color=0;color<CHANNELS;color++) {
-        for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
+    for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
+        for (color=0;color<CHANNELS;color++) {
             light_one[i][color] += light_two[i][color];
             if (light_one[i][color] > 1)
                 light_one[i][color] = 1;
+            else if (light_one[i][color] < 0)
+                light_one[i][color] = 0;
             //printf("%0.2f ", light_one[i][color]);
         }
         //printf("\n");
@@ -1103,6 +1111,14 @@ void init() {
     gen_light(stat_light, init_light_map);
     combine_light(stationary, init_light_map);
 
+    int i;
+    for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4 - 1;i++) {
+        init_light_map[i][red] = AMBIENT_R;
+        init_light_map[i][green] = AMBIENT_G;
+        init_light_map[i][blue] = AMBIENT_B;
+    }
+    combine_light(stationary, init_light_map);
+
     sprites[0].posX = 3.5 * TILE;
     sprites[0].posY = 7.5 * TILE;
     sprites[0].direction = 0.0f;
@@ -1139,8 +1155,7 @@ void init() {
     radian_change(&base_angle);
     float baseCos = cos(base_angle);
     float side = RES * sin(base_angle) / sin(FOV);
-    int i;
-    for (i = 0; i<RES; i++)
+    for (i=0; i<RES; i++)
         angles[i] = acos((side - i * baseCos) / sqrt(side * side + i * i - 2 * side * i * baseCos));
     doors[0].x = 5;
     doors[0].y = 2;
@@ -1157,7 +1172,7 @@ void init() {
 int main(int argc, char* argv[]) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(RES * SCALE, HEIGHT);
+    glutInitWindowSize(RES * SCALE, HEIGHT * FLOOR_SCALE);
     glutCreateWindow("Raycaster");
     init();
     glutDisplayFunc(display);
