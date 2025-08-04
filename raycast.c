@@ -10,10 +10,6 @@
 #define FOV 0.5 * PI
 #define SHIFT (FOV / 2)
 
-//#define DOORN 7
-
-#define LIGHT_NUM 1
-#define SPRITE_NUM 1
 #define MAP_SCALE 16
 #define LIGHT_GRID 2
 
@@ -31,32 +27,12 @@
 
 #define FLOOR_SCALE 1
 #define HEIGHT 512
-//#define MAPX 10
-//#define MAPY 13
 
 #define MIN_BRIGHTNESS 0.01
 
 #define LIGHT_POS (4 * TILE) //light source
 
-//#define LIGHT_MAP_L (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID))
-
-/*
-#define AMBIENT_R 0.1f
-#define AMBIENT_G 0.1f
-#define AMBIENT_B 0.1f
-*/
-
-/*
-#define FADES 5.0
-#define DFADE 3.0
-#define FOGR 0.1
-#define FOGG 0.1
-#define FOGB 0.1
-
-#define DOF (FADES + DFADE)
-*/
-
-#define LDOF 20
+#define LDOF 10
 
 float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
 float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
@@ -110,66 +86,78 @@ typedef struct {
     float g;
     float b;
 } light_source;
-light_source lights[LIGHT_NUM];
-//float light_maps[LIGHT_NUM][LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS] = {0};
+light_source *lights;
 
 typedef struct {
     float posX;
     float posY;
     float direction;
-    unsigned is_static : 1;
+    float deltadir;
+    float deltamove;
     light_source* source;
 } sprite_strct;
-sprite_strct sprites[SPRITE_NUM];
+sprite_strct *sprites;
 
 float playerX, playerY, playerAngle;
 bool show_map = true;
 float move_direction_v, move_direction_h;
-//double floor_const = PLHEIGHT * tan(SHIFT) * RES / 2 * SCALE; // aspect 1/2
 double floor_const = HEIGHT * RES / 2 / 4/ tan(0.5*PI -SHIFT) ; // aspect 1/2
 float current_frame = 0.0;
 float delta_frames, last_frame;
 
 float angles[RES];
 
-/*
-int map[MAPX * MAPY] =
-{
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 0, 0, 0, 1, 0, 2, 0, 1,
-    1, 0, 1, 0, 0, 2, 0, 1, 0, 1,
-    1, 3, 1, 0, 0, 1, 0, 5, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 1, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 5, 0, 1,
-    1, 0, 0, 1, 0, 0, 0, 1, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 5, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 1, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 5, 0, 1,
-    1, 4, 1, 4, 1, 3, 1, 1, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-};
-*/
-
-//bool visible[MAPX * MAPY] = { false };
-//bool expandable[MAPX * MAPY] = { false };
-
-//float stationary[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
-//float brightness[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
-//float player_light[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
-
 int *mapX, *mapY, *map, LIGHT_MAP_L, FULL_LML;
 int *intamb, *fogs, *foge, *intfog;
 
-int MAPX, MAPY;
+int MAPX, MAPY, spritenum;
 int DOORN = 0;
 
 float amb[CHANNELS], fog[CHANNELS];
-float *stationary, *brightness, *light_maps;
+float *stationary, *brightness;
 
 bool *visible, *expandable;
 
 float DOF, FADES, DFADE;
+
+void exitmap(int num) {
+    switch (num) {
+    case 9:
+        free(lights);
+        lights = NULL;
+    case 8:
+        free(sprites);
+        sprites = NULL;
+    case 7:
+        free(intfog);
+        intfog = NULL;
+    case 6:
+        free(intamb);
+        intamb = NULL;
+    case 5:
+        free(doors);
+        doors = NULL;
+    case 4:
+        free(brightness);
+        brightness = NULL;
+    case 3:
+        free(stationary);
+        stationary = NULL;
+    case 2:
+        free(expandable);
+        expandable = NULL;
+    case 1:
+        free(visible);
+        visible = NULL;
+    case 0:
+        free(map);
+        map = NULL;
+    }
+}
+
+void finalexit() {
+    exitmap(9);
+}
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -184,17 +172,6 @@ door_struct* getDoor(int x, int y) {
     int i;
     for (i=0;doors[i].x != x || doors[i].y != y;i++);
     return(&doors[i]);
-}
-
-
-
-void exitmap() {
-    free(map);
-    map = NULL;
-    free(intamb);
-    intamb = NULL;
-    free(intfog);
-    intfog = NULL;
 }
 
 bool path_free(float posX, float posY, int tileX, int tileY, double angle, double dist, int corner) {
@@ -350,7 +327,7 @@ void gen_light(light_source light, float light_map[]) {
     float distX, distY;
     float bright;
     int i, color;
-    for (i=0;i<LIGHT_MAP_L;i++) {
+    for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4;i++) {
         for (color=0;color<CHANNELS;color++) {
             light_map[i * CHANNELS + color] = 0;
         }
@@ -483,7 +460,7 @@ void gen_light(light_source light, float light_map[]) {
 
 void combine_light(float light_one[], float light_two[]) {
     int i, color;
-    for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
+    for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4;i++) {
         for (color=0;color<CHANNELS;color++) {
             light_one[i * CHANNELS + color] += light_two[i * CHANNELS + color];
             if (light_one[i * CHANNELS + color] > 1)
@@ -549,8 +526,9 @@ void movef(int speed, float move_direction, float *positionX, float *positionY, 
 }
 
 void check_inputs() {
-    if (newkeys.p)
+    if (newkeys.p) {
         exit(0);
+    }
     move_direction_h = move_direction_v = -1.0f;
     if (newkeys.a && !newkeys.d) {
         move_direction_h = 1.5 * PI;
@@ -591,13 +569,16 @@ void check_inputs() {
         movef(PLAYER_SPEED, move_direction_v, &playerX, &playerY, 0.2f);
     }
 
-    sprites[0].direction += 0.00125 * delta_frames + PI;
-    radian_change(&sprites[0].direction);
-    movef(PLAYER_SPEED / 4, sprites[0].direction, &sprites[0].posX, &sprites[0].posY, 0.2f);
-    sprites[0].direction -= PI;
-    radian_change(&sprites[0].direction);
-    sprites[0].source->posX = sprites[0].posX;
-    sprites[0].source->posY = sprites[0].posY;
+    int i;
+    for (i=0;i<spritenum;i++) {
+        sprites[i].direction += sprites[i].deltadir * delta_frames + PI;
+        radian_change(&sprites[i].direction);
+        movef(PLAYER_SPEED / 4, sprites[i].direction, &sprites[i].posX, &sprites[i].posY, sprites[i].deltamove);
+        sprites[i].direction -= PI;
+        radian_change(&sprites[i].direction);
+        sprites[i].source->posX = sprites[i].posX;
+        sprites[i].source->posY = sprites[i].posY;
+    }
 
     float rayXH, rayYH, distH, rayXV, rayYV, distV;
     float Sin = sin(playerAngle);
@@ -1104,7 +1085,6 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
-    gen_light(*sprites[0].source, light_maps);
 
     int i, color;
     for (color=0;color<CHANNELS;color++) {
@@ -1113,14 +1093,18 @@ void display() {
         }
     }
 
-    combine_light(brightness, light_maps);
+    float dlight_map[FULL_LML];
+    for (i=0;i<spritenum;i++) {
+        gen_light(*sprites[i].source, dlight_map);
+        combine_light(brightness, dlight_map);
+    }
+
     DDA();
     expand_visible();
     render();
     if (show_map)
         drawMap();
     glutSwapBuffers();
-    //combine_light(player_light, false);
     oldkeys = newkeys;
 }
 
@@ -1178,19 +1162,35 @@ void initmap(FILE* fptr) {
     int num = 1;
     int mapXY[2];
     parsel(fptr, 2, mapXY, -1);
-    //*mapX = mapXY[0];
-    //*mapY = mapXY[1];
     MAPX = mapXY[0];
     MAPY = mapXY[1];
     LIGHT_MAP_L = MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);
     FULL_LML = (LIGHT_MAP_L + MAPX * MAPY * 4) * CHANNELS;
-    map = (int *)malloc(sizeof(int) * MAPX * MAPY);
+    map = malloc(sizeof(int) * MAPX * MAPY);
+    if (map == NULL) {
+        exitmap(0);
+        exit(0);
+    }
     visible = calloc(MAPX * MAPY, sizeof(bool));
+    if (visible == NULL) {
+        exitmap(1);
+        exit(1);
+    }
     expandable = calloc(MAPX * MAPY, sizeof(bool));
-//bool visible[MAPX * MAPY] = { false };
-//bool expandable[MAPX * MAPY] = { false };
+    if (expandable == NULL) {
+        exitmap(2);
+        exit(1);
+    }
     stationary = calloc(FULL_LML, sizeof(float));
+    if (stationary == NULL) {
+        exitmap(3);
+        exit(1);
+    }
     brightness = calloc(FULL_LML, sizeof(float));
+    if (brightness == NULL) {
+        exitmap(4);
+        exit(1);
+    }
     int mapline[mapXY[1]];
     int i, j;
     for (i=0;i<mapXY[1];i++) {
@@ -1202,6 +1202,10 @@ void initmap(FILE* fptr) {
         }
     }
     doors = malloc(sizeof(*doors) * DOORN);
+    if (doors == NULL) {
+        exitmap(5);
+        exit(1);
+    }
     DOORN = 0;
     for (i=0;i<MAPY;i++) {
     	for (j=0;j<MAPX;j++) {
@@ -1221,14 +1225,22 @@ void initmap(FILE* fptr) {
     playerX = playerXYA[0];
     playerY = playerXYA[1];
     playerAngle = playerXYA[2] / 50.0 * PI;
-    intamb = (int *)malloc(sizeof(int) * 3);
+    intamb = malloc(sizeof(int) * 3);
+    if (intamb == NULL) {
+        exitmap(6);
+        exit(1);
+    }
     parsel(fptr, 3, intamb, 0);
     int fogse[2];
     parsel(fptr, 2, fogse, -1);
     DOF = (float)fogse[1];
     FADES = (float)fogse[0];
     DFADE = DOF - FADES;
-    intfog = (int *)malloc(sizeof(int) * 3);
+    intfog = malloc(sizeof(int) * 3);
+    if (intfog == NULL) {
+        exitmap(7);
+        exit(1);
+    }
     parsel(fptr, 3, intfog, 0);
     for (i=0;i<CHANNELS;i++) {
         amb[i] = intamb[i] / 255.0;
@@ -1239,9 +1251,7 @@ void initmap(FILE* fptr) {
 
     light_source stat_light;
     stat_light.is_static = 1;
-    float init_light_map[(LIGHT_MAP_L + 4 * MAPX * MAPY) * CHANNELS];
-
-
+    float init_light_map[FULL_LML];
 
     int lightslocal[lightnum[0]][6];
     for (i=0;i<lightnum[0];i++) {
@@ -1255,7 +1265,7 @@ void initmap(FILE* fptr) {
         gen_light(stat_light, init_light_map);
         combine_light(stationary, init_light_map);
     }
-    for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4 - 1;i++) {
+    for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4;i++) {
         init_light_map[i * CHANNELS + red] = amb[red];
         init_light_map[i * CHANNELS + green] = amb[green];
         init_light_map[i * CHANNELS + blue] = amb[blue];
@@ -1264,22 +1274,33 @@ void initmap(FILE* fptr) {
 
     int spr_num[1];
     parsel(fptr, 1, spr_num, -1);
-    light_maps = calloc(FULL_LML * spr_num[0], sizeof(float));
-    int spriteinfo[spr_num[0]][7];
-    for (i=0;i<spr_num[0];i++) {
-        parsel(fptr, 7, spriteinfo[i], 4);
+    spritenum = spr_num[0];
+
+    sprites = malloc(sizeof(*sprites) * spritenum);
+    if (sprites == NULL) {
+        exitmap(8);
+        exit(1);
+    }
+    lights = malloc(sizeof(*lights) * spritenum);
+    if (lights == NULL) {
+        exitmap(9);
+        exit(1);
+    }
+    int spriteinfo[spritenum][9];
+    for (i=0;i<spritenum;i++) {
+        parsel(fptr, 9, spriteinfo[i], 6);
         sprites[i].posX = spriteinfo[i][0];
         sprites[i].posY = spriteinfo[i][1];
-        sprites[i].direction = spriteinfo[i][2];
-        sprites[i].is_static = 0;
+        sprites[i].direction = spriteinfo[i][2] / 50.0 * PI;
+        sprites[i].deltadir = spriteinfo[i][3] / 50000.0 * PI;
+        sprites[i].deltamove = spriteinfo[i][4] / 100.0;
         sprites[i].source = &lights[i];
         sprites[i].source->posX = spriteinfo[i][0];
         sprites[i].source->posY = spriteinfo[i][1];
-        sprites[i].source->intens = spriteinfo[i][3];
-        sprites[i].source->is_static = 0;
-        sprites[i].source->r = spriteinfo[i][4] / 255.0;
-        sprites[i].source->g = spriteinfo[i][5] / 255.0;
-        sprites[i].source->b = spriteinfo[i][6] / 255.0;
+        sprites[i].source->intens = spriteinfo[i][5];
+        sprites[i].source->r = spriteinfo[i][6] / 255.0;
+        sprites[i].source->g = spriteinfo[i][7] / 255.0;
+        sprites[i].source->b = spriteinfo[i][8] / 255.0;
     }
 
     /*
@@ -1303,6 +1324,10 @@ void initmap(FILE* fptr) {
 
 void init() {
     FILE* fptr = fopen("map.map", "r");
+    if (fptr == NULL) {
+        printf("No map file found");
+        exit(1);
+    }
     initmap(fptr);
     //exitmap();
     fptr = NULL;
@@ -1393,6 +1418,7 @@ int main(int argc, char* argv[]) {
     glutInitWindowSize((RES - 2) * SCALE, (HEIGHT - 2) * FLOOR_SCALE);
     glutCreateWindow("Raycaster");
     init();
+    atexit(finalexit);
     glutDisplayFunc(display);
     glutKeyboardFunc(keydown);
     glutKeyboardUpFunc(keyup);
