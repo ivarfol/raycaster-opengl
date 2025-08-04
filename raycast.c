@@ -9,7 +9,9 @@
 #define SCALE 4
 #define FOV 0.5 * PI
 #define SHIFT (FOV / 2)
-#define DOORN 7
+
+//#define DOORN 7
+
 #define LIGHT_NUM 1
 #define SPRITE_NUM 1
 #define MAP_SCALE 16
@@ -29,19 +31,22 @@
 
 #define FLOOR_SCALE 1
 #define HEIGHT 512
-#define MAPX 10
-#define MAPY 13
+//#define MAPX 10
+//#define MAPY 13
 
 #define MIN_BRIGHTNESS 0.01
 
 #define LIGHT_POS (4 * TILE) //light source
 
-#define LIGHT_MAP_L (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID))
+//#define LIGHT_MAP_L (MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID))
 
+/*
 #define AMBIENT_R 0.1f
 #define AMBIENT_G 0.1f
 #define AMBIENT_B 0.1f
+*/
 
+/*
 #define FADES 5.0
 #define DFADE 3.0
 #define FOGR 0.1
@@ -49,12 +54,15 @@
 #define FOGB 0.1
 
 #define DOF (FADES + DFADE)
+*/
+
 #define LDOF 20
 
 float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
 float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
-
 extern int parse(FILE* fptr, float texture[][CHANNELS]);
+extern void parsel(FILE* fptr, int num, int out[], int colo_pos);
+
 enum { red, green, blue };
 
 typedef struct {
@@ -78,7 +86,7 @@ typedef struct {
     int x, y, wait;
     float exte, exte_rate;
 } door_struct;
-door_struct doors[DOORN];
+door_struct *doors;
 
 typedef struct {
     bool isdoor;
@@ -103,7 +111,7 @@ typedef struct {
     float b;
 } light_source;
 light_source lights[LIGHT_NUM];
-float light_maps[LIGHT_NUM][LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS] = {0};
+//float light_maps[LIGHT_NUM][LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS] = {0};
 
 typedef struct {
     float posX;
@@ -124,6 +132,7 @@ float delta_frames, last_frame;
 
 float angles[RES];
 
+/*
 int map[MAPX * MAPY] =
 {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -140,12 +149,27 @@ int map[MAPX * MAPY] =
     1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 };
-bool visible[MAPX * MAPY] = { false };
-bool expandable[MAPX * MAPY] = { false };
+*/
 
-float stationary[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
-float brightness[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
+//bool visible[MAPX * MAPY] = { false };
+//bool expandable[MAPX * MAPY] = { false };
+
+//float stationary[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
+//float brightness[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS] = {0};
 //float player_light[LIGHT_MAP_L + MAPX *MAPY * 4][CHANNELS];
+
+int *mapX, *mapY, *map, LIGHT_MAP_L, FULL_LML;
+int *intamb, *fogs, *foge, *intfog;
+
+int MAPX, MAPY;
+int DOORN = 0;
+
+float amb[CHANNELS], fog[CHANNELS];
+float *stationary, *brightness, *light_maps;
+
+bool *visible, *expandable;
+
+float DOF, FADES, DFADE;
 
 void radian_change(float *a) {
     if (*a > 2 * PI)
@@ -160,6 +184,17 @@ door_struct* getDoor(int x, int y) {
     int i;
     for (i=0;doors[i].x != x || doors[i].y != y;i++);
     return(&doors[i]);
+}
+
+
+
+void exitmap() {
+    free(map);
+    map = NULL;
+    free(intamb);
+    intamb = NULL;
+    free(intfog);
+    intfog = NULL;
 }
 
 bool path_free(float posX, float posY, int tileX, int tileY, double angle, double dist, int corner) {
@@ -292,7 +327,7 @@ bool path_free(float posX, float posY, int tileX, int tileY, double angle, doubl
     return false;
 }
 
-void gen_light(light_source light, float light_map[][CHANNELS]) {
+void gen_light(light_source light, float light_map[]) {
 //int lightX, int lightY, float intens, float bright_arr[][CHANNELS], float r, float g, float b, bool is_static;
     int startX, endX;
     int startY, endY;
@@ -315,9 +350,10 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
     float distX, distY;
     float bright;
     int i, color;
-    for (color=0;color<CHANNELS;color++) {
-        for (i=0;i<MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);i++)
-            light_map[i][color] = 0;
+    for (i=0;i<LIGHT_MAP_L;i++) {
+        for (color=0;color<CHANNELS;color++) {
+            light_map[i * CHANNELS + color] = 0;
+        }
     }
     double angle, dist;
     float mult;
@@ -384,9 +420,9 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
                     bright = 1;
                 else if (bright < 0)
                     bright = 1;
-                light_map[bright_index][red] = bright * light.r;
-                light_map[bright_index][green] = bright * light.g;
-                light_map[bright_index][blue] = bright * light.b;
+                light_map[bright_index * CHANNELS + red] = bright * light.r;
+                light_map[bright_index * CHANNELS + green] = bright * light.g;
+                light_map[bright_index * CHANNELS + blue] = bright * light.b;
 
                 if (corner>=0) {
                     if (corner == 3) {
@@ -425,9 +461,9 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
                         bright = 1;
                     else if (bright < 0)
                         bright = 1;
-                    light_map[bright_index][red] = bright * light.r;
-                    light_map[bright_index][green] = bright * light.g;
-                    light_map[bright_index][blue] = bright * light.b;
+                    light_map[bright_index * CHANNELS + red] = bright * light.r;
+                    light_map[bright_index * CHANNELS + green] = bright * light.g;
+                    light_map[bright_index * CHANNELS + blue] = bright * light.b;
                 }
             }
         }
@@ -436,7 +472,7 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
     if (newkeys.l) {
         for (tileY = 0; tileY < MAPY * (TILE / LIGHT_GRID);tileY++) {
             for (tileX = 0; tileX < MAPX * (TILE / LIGHT_GRID);tileX++) {
-                printf("%0.2f ", light.light_map[tileY * MAPY * (TILE / LIGHT_GRID) + tileX]);
+                printf("%0.2f ", light.light_map[tileY  * CHANNELS + MAPY * (TILE / LIGHT_GRID) + tileX]);
             }
             printf("\n");
         }
@@ -445,13 +481,13 @@ void gen_light(light_source light, float light_map[][CHANNELS]) {
     */
 }
 
-void combine_light(float light_one[][CHANNELS], float light_two[][CHANNELS]) {
+void combine_light(float light_one[], float light_two[]) {
     int i, color;
     for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
         for (color=0;color<CHANNELS;color++) {
-            light_one[i][color] += light_two[i][color];
-            if (light_one[i][color] > 1)
-                light_one[i][color] = 1;
+            light_one[i * CHANNELS + color] += light_two[i * CHANNELS + color];
+            if (light_one[i * CHANNELS + color] > 1)
+                light_one[i * CHANNELS + color] = 1;
             //printf("%0.2f ", light_one[i][color]);
         }
         //printf("\n");
@@ -630,7 +666,7 @@ void render() {
     float deltatextureY;
     float offset;
     float r, g, b;
-    float fog;
+    float fogstrength;
     for (ray=0;ray<RES;ray++) {
         if (show_map) {
             glColor3f(0, 1, 0);
@@ -699,18 +735,18 @@ void render() {
                 g = texture_one[tex_index][green];
                 b = texture_one[tex_index][blue];
             }
-            fog = -TILE / 100.0 * FADES / DFADE + 1.0 / (float)(TILE) / DFADE * render_infoP->dist;
-            if (fog < 0)
-        		fog = 0;
-        	else if (fog > 1.0)
-        		fog = 1.0;
+            fogstrength = -TILE / 100.0 * FADES / DFADE + 1.0 / (float)(TILE) / DFADE * render_infoP->dist;
+            if (fogstrength < 0)
+        		fogstrength = 0;
+        	else if (fogstrength > 1.0)
+        		fogstrength = 1.0;
             
-            r *= brightness[bright_index][red];
-            g *= brightness[bright_index][green];
-            b *= brightness[bright_index][blue];
-            r = r * (1.0 - fog) + FOGR * fog;
-            g = g * (1.0 - fog) + FOGG * fog;
-            b = b * (1.0 - fog) + FOGB * fog;
+            r *= brightness[bright_index * CHANNELS + red];
+            g *= brightness[bright_index * CHANNELS + green];
+            b *= brightness[bright_index * CHANNELS + blue];
+            r = r * (1.0 - fogstrength) + fog[red] * fogstrength;
+            g = g * (1.0 - fogstrength) + fog[green] * fogstrength;
+            b = b * (1.0 - fogstrength) + fog[blue] * fogstrength;
 
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
@@ -720,11 +756,11 @@ void render() {
         }
         for (hposition = 0;hposition<HEIGHT - end;hposition++) {
         	floor_ray = floor_const / (hposition + end - HEIGHT / 2.0) / render_infoP->correct_fish;
-            fog = -TILE / 100.0 * FADES / DFADE + 1.0 / (float)(TILE) / DFADE * floor_ray;
-        	if (fog < 0)
-        		fog = 0;
-        	else if (fog > 1.0)
-        		fog = 1.0;
+            fogstrength = -TILE / 100.0 * FADES / DFADE + 1.0 / (float)(TILE) / DFADE * floor_ray;
+        	if (fogstrength < 0)
+        		fogstrength = 0;
+        	else if (fogstrength > 1.0)
+        		fogstrength = 1.0;
             tex_index = (int)(floor_ray * render_infoP->Sin + playerY) % 64 * 64 + (int)(floor_ray * render_infoP->Cos + playerX) % 64;
             if (tex_index > 63 * 64)
                 tex_index = 63*64;
@@ -738,12 +774,12 @@ void render() {
             if (LIGHT_MAP_L + 4 * MAPX * MAPY <= bright_index || bright_index < 0)
                 bright_index = 0;
 
-            r *= brightness[bright_index][red];
-            g *= brightness[bright_index][green];
-            b *= brightness[bright_index][blue];
-            r = r * (1.0 - fog) + FOGR * fog;
-            g = g * (1.0 - fog) + FOGG * fog;
-            b = b * (1.0 - fog) + FOGB * fog;
+            r *= brightness[bright_index * CHANNELS + red];
+            g *= brightness[bright_index * CHANNELS + green];
+            b *= brightness[bright_index * CHANNELS + blue];
+            r = r * (1.0 - fogstrength) + fog[red] * fogstrength;
+            g = g * (1.0 - fogstrength) + fog[green] * fogstrength;
+            b = b * (1.0 - fogstrength) + fog[blue] * fogstrength;
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE-SCALE, hposition + end);
@@ -755,12 +791,12 @@ void render() {
             */
             r = g = b = 1.0;
             
-            r *= brightness[bright_index][red];
-            g *= brightness[bright_index][green];
-            b *= brightness[bright_index][blue];
-            r = r * (1.0 - fog) + FOGR * fog;
-            g = g * (1.0 - fog) + FOGG * fog;
-            b = b * (1.0 - fog) + FOGB * fog;
+            r *= brightness[bright_index * CHANNELS + red];
+            g *= brightness[bright_index * CHANNELS + green];
+            b *= brightness[bright_index * CHANNELS + blue];
+            r = r * (1.0 - fogstrength) + fog[red] * fogstrength;
+            g = g * (1.0 - fogstrength) + fog[green] * fogstrength;
+            b = b * (1.0 - fogstrength) + fog[blue] * fogstrength;
             glColor3f(r, g, b);
             glBegin(GL_POINTS);
             glVertex2i(ray * SCALE-SCALE, start -hposition);
@@ -1068,16 +1104,16 @@ void display() {
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
-    gen_light(*sprites[0].source, light_maps[0]);
+    gen_light(*sprites[0].source, light_maps);
 
     int i, color;
     for (color=0;color<CHANNELS;color++) {
         for (i=0;i< LIGHT_MAP_L + 4 * MAPX * MAPY;i++) {
-            brightness[i][color] = stationary[i][color];
+            brightness[i * CHANNELS + color] = stationary[i * CHANNELS + color];
         }
     }
 
-    combine_light(brightness, light_maps[0]);
+    combine_light(brightness, light_maps);
     DDA();
     expand_visible();
     render();
@@ -1138,15 +1174,144 @@ void keyup(unsigned char key, int x, int y) {
         newkeys.l = 0;
 }
 
-void init() {
+void initmap(FILE* fptr) {
+    int num = 1;
+    int mapXY[2];
+    parsel(fptr, 2, mapXY, -1);
+    //*mapX = mapXY[0];
+    //*mapY = mapXY[1];
+    MAPX = mapXY[0];
+    MAPY = mapXY[1];
+    LIGHT_MAP_L = MAPX * MAPY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);
+    FULL_LML = (LIGHT_MAP_L + MAPX * MAPY * 4) * CHANNELS;
+    map = (int *)malloc(sizeof(int) * MAPX * MAPY);
+    visible = calloc(MAPX * MAPY, sizeof(bool));
+    expandable = calloc(MAPX * MAPY, sizeof(bool));
+//bool visible[MAPX * MAPY] = { false };
+//bool expandable[MAPX * MAPY] = { false };
+    stationary = calloc(FULL_LML, sizeof(float));
+    brightness = calloc(FULL_LML, sizeof(float));
+    int mapline[mapXY[1]];
+    int i, j;
+    for (i=0;i<mapXY[1];i++) {
+        parsel(fptr, mapXY[0], mapline,-1);
+        for (j=0;j<mapXY[0];j++) {
+            map[i*mapXY[0] + j] = mapline[j];
+    		if (map[i * MAPX + j] == 2 || map[i * MAPX + j] == 3)
+			    DOORN++;
+        }
+    }
+    doors = malloc(sizeof(*doors) * DOORN);
+    DOORN = 0;
+    for (i=0;i<MAPY;i++) {
+    	for (j=0;j<MAPX;j++) {
+    		if (map[i * MAPX + j] == 2 || map[i * MAPX + j] == 3) {
+    			doors[DOORN].x = j;
+			    doors[DOORN].y = i;
+			    doors[DOORN].exte = 64.0;
+			    doors[DOORN].exte_rate = 0.0;
+			    doors[DOORN].wait = 0;
+			    DOORN++;
+			}
+		}
+	}
+
+    int playerXYA[3];
+    parsel(fptr, 3, playerXYA, -1);
+    playerX = playerXYA[0];
+    playerY = playerXYA[1];
+    playerAngle = playerXYA[2] / 50.0 * PI;
+    intamb = (int *)malloc(sizeof(int) * 3);
+    parsel(fptr, 3, intamb, 0);
+    int fogse[2];
+    parsel(fptr, 2, fogse, -1);
+    DOF = (float)fogse[1];
+    FADES = (float)fogse[0];
+    DFADE = DOF - FADES;
+    intfog = (int *)malloc(sizeof(int) * 3);
+    parsel(fptr, 3, intfog, 0);
+    for (i=0;i<CHANNELS;i++) {
+        amb[i] = intamb[i] / 255.0;
+        fog[i] = intfog[i] / 255.0;
+    }
+    int lightnum[1];
+    parsel(fptr, 1, lightnum, -1);
+
     light_source stat_light;
-    float init_light_map[LIGHT_MAP_L + 4 * MAPX * MAPY][CHANNELS];
+    stat_light.is_static = 1;
+    float init_light_map[(LIGHT_MAP_L + 4 * MAPX * MAPY) * CHANNELS];
+
+
+
+    int lightslocal[lightnum[0]][6];
+    for (i=0;i<lightnum[0];i++) {
+        parsel(fptr, 6, lightslocal[i], 3);
+        stat_light.posX = lightslocal[i][0];
+        stat_light.posY = lightslocal[i][1];
+        stat_light.intens = lightslocal[i][2];
+        stat_light.r = lightslocal[i][3] / 255.0;
+        stat_light.g = lightslocal[i][4] / 255.0;
+        stat_light.b = lightslocal[i][5] / 255.0;
+        gen_light(stat_light, init_light_map);
+        combine_light(stationary, init_light_map);
+    }
+    for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4 - 1;i++) {
+        init_light_map[i * CHANNELS + red] = amb[red];
+        init_light_map[i * CHANNELS + green] = amb[green];
+        init_light_map[i * CHANNELS + blue] = amb[blue];
+    }
+    combine_light(stationary, init_light_map);
+
+    int spr_num[1];
+    parsel(fptr, 1, spr_num, -1);
+    light_maps = calloc(FULL_LML * spr_num[0], sizeof(float));
+    int spriteinfo[spr_num[0]][7];
+    for (i=0;i<spr_num[0];i++) {
+        parsel(fptr, 7, spriteinfo[i], 4);
+        sprites[i].posX = spriteinfo[i][0];
+        sprites[i].posY = spriteinfo[i][1];
+        sprites[i].direction = spriteinfo[i][2];
+        sprites[i].is_static = 0;
+        sprites[i].source = &lights[i];
+        sprites[i].source->posX = spriteinfo[i][0];
+        sprites[i].source->posY = spriteinfo[i][1];
+        sprites[i].source->intens = spriteinfo[i][3];
+        sprites[i].source->is_static = 0;
+        sprites[i].source->r = spriteinfo[i][4] / 255.0;
+        sprites[i].source->g = spriteinfo[i][5] / 255.0;
+        sprites[i].source->b = spriteinfo[i][6] / 255.0;
+    }
+
+    /*
+    printf("%d %d\n", mapXY[0], mapXY[1]);
+    for (i=0;i<mapXY[1];i++) {
+        for (j=0;j<mapXY[0];j++)
+            printf("%d ", map[i*mapXY[0] + j]);
+        printf("\n");
+    }
+    printf("%d %d %d\n", intamb[0], intamb[1], intamb[2]);
+    printf("%d %d\n", fogse[0], fogse[1]);
+    printf("%d %d %d\n", intfog[0], intfog[1], intfog[2]);
+    printf("%d\n", lightnum[0]);
+    for (i=0;i<lightnum[0];i++)
+        printf("%d %d %d %d %d %d\n", lightslocal[i][0], lightslocal[i][1], lightslocal[i][2], lightslocal[i][3], lightslocal[i][4], lightslocal[i][5]);
+    printf("%d\n", spr_num[0]);
+    for (i=0;i<spr_num[0];i++)
+        printf("%d %d %d %d %d %d %d\n", spriteinfo[i][0], spriteinfo[i][1], spriteinfo[i][2], spriteinfo[i][3], spriteinfo[i][4], spriteinfo[i][5], spriteinfo[i][6]);
+    */
+}
+
+void init() {
+    FILE* fptr = fopen("map.map", "r");
+    initmap(fptr);
+    //exitmap();
+    fptr = NULL;
+    //light_source stat_light;
+    //float init_light_map[(LIGHT_MAP_L + 4 * MAPX * MAPY) * CHANNELS];
     glClearColor(0.3,0.3,0.3,0);
     gluOrtho2D(0,(RES - 2)*SCALE,(HEIGHT - 2)*FLOOR_SCALE,0);
-    playerX = 300;
-    playerY = 300;
-    playerAngle = 0.0f;
 
+    /*
     stat_light.posX = 3.51 * TILE;
     stat_light.posY = 2.51 * TILE;
     stat_light.intens = 10000.0f;
@@ -1175,9 +1340,9 @@ void init() {
 
     int i;
     for (i=0;i<LIGHT_MAP_L + MAPX * MAPY * 4 - 1;i++) {
-        init_light_map[i][red] = AMBIENT_R;
-        init_light_map[i][green] = AMBIENT_G;
-        init_light_map[i][blue] = AMBIENT_B;
+        init_light_map[i * CHANNELS + red] = amb[red];
+        init_light_map[i * CHANNELS + green] = amb[green];
+        init_light_map[i * CHANNELS + blue] = amb[blue];
     }
     combine_light(stationary, init_light_map);
 
@@ -1193,8 +1358,8 @@ void init() {
     sprites[0].source->r = 1;
     sprites[0].source->g = 1;
     sprites[0].source->b = 1;
+    */
 
-    FILE* fptr = NULL;
     fptr = fopen("missing.ppm", "r");
     if (fptr != NULL) {
         if (parse(fptr, texture_missing))
@@ -1217,22 +1382,9 @@ void init() {
     radian_change(&base_angle);
     float baseCos = cos(base_angle);
     float side = RES * sin(base_angle) / sin(FOV);
+    int i;
     for (i=0; i<RES; i++)
         angles[i] = acos((side - i * baseCos) / sqrt(side * side + i * i - 2 * side * i * baseCos));
-    
-    int j, door_num = 0;
-    for (i=0;i<MAPY;i++) {
-    	for (j=0;j<MAPX;j++) {
-    		if (map[i * MAPX + j] == 2 || map[i * MAPX + j] == 3) {
-    			doors[door_num].x = j;
-			    doors[door_num].y = i;
-			    doors[door_num].exte = 64.0;
-			    doors[door_num].exte_rate = 0.0;
-			    doors[door_num].wait = 0;
-			    door_num++;
-			}
-		}
-	}
 }
 
 int main(int argc, char* argv[]) {
