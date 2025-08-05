@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <GL/glut.h>
+#include <GL/freeglut.h>
 #include <math.h>
 #include <stdbool.h>
 
@@ -101,7 +101,7 @@ sprite_strct *sprites;
 float playerX, playerY, playerAngle;
 bool show_map = true;
 float move_direction_v, move_direction_h;
-double floor_const = HEIGHT * RES / 2 / 4/ tan(0.5*PI -SHIFT) ; // aspect 1/2
+double floor_const = HEIGHT * RES / 2 / 4 / tan(0.5*PI -SHIFT) ; // aspect 1/2
 float current_frame = 0.0;
 float delta_frames, last_frame;
 
@@ -494,7 +494,7 @@ void drawMap() {
                 glVertex2i(tileX, tileY + MAP_SCALE - 1);
                 glEnd();
             }
-            else if (map[y*MAPX+ x] == 3) {
+            else if (map[y*MAPX+ x] == 12) {
                 tileX = x * MAP_SCALE;
                 tileY = (y + 0.5) * MAP_SCALE;
                 glBegin(GL_LINES);
@@ -514,12 +514,12 @@ void movef(int speed, float move_direction, float *positionX, float *positionY, 
     int tmpYmap = map[((int)tmpY>>TILE_POW) * MAPX + ((int)(*positionX)>>TILE_POW)];
     int tmpXmap = map[((int)(*positionY)>>TILE_POW) * MAPX + ((int)tmpX>>TILE_POW)];
     int oldposY = *positionY;
-    if (tmpYmap == 3 || tmpYmap == 2)
+    if (tmpYmap == 12 || tmpYmap == 2)
         door = getDoor(((int)(*positionX)>>TILE_POW), ((int)tmpY>>TILE_POW));
     if (tmpYmap == 0 || door != NULL && door->exte == 0.0)
         *positionY = tmpY;
     door = NULL;
-    if (tmpXmap == 3 || tmpXmap == 2)
+    if (tmpXmap == 12 || tmpXmap == 2)
         door = getDoor(((int)tmpX>>TILE_POW), ((int)(oldposY)>>TILE_POW));
     if (tmpXmap == 0 || door != NULL && door->exte == 0.0)
         *positionX = tmpX;
@@ -627,7 +627,7 @@ void check_inputs() {
         }
         raymapX = (int)(rayXH)>>TILE_POW;
         raymapY = (int)(rayYH)>>TILE_POW;
-        if (map[raymapX + raymapY * MAPX] == 2 || map[raymapX + raymapY * MAPX] == 3) {
+        if (map[raymapX + raymapY * MAPX] == 2 || map[raymapX + raymapY * MAPX] == 12) {
             door = getDoor(raymapX, raymapY);
             door->exte_rate = -0.5;
         }
@@ -884,7 +884,7 @@ void DDA() {
                     doorH = NULL;
                     break;
                 }
-                else if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 3) {
+                else if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 12) {
                     doorH = getDoor(raymapXH, raymapYH);
                     if (doorH->x * TILE - doorH->exte + TILE < rayXH + 0.5 * deltaXH) {
                         dofH = DOF;
@@ -903,7 +903,7 @@ void DDA() {
                         dofH++;
                     }
                 }
-                else if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 4) {
+                else if (raymapH > 0 && raymapH < MAPX * MAPY && map[raymapH] == 13) {
                     dofH = DOF;
                     distH += 0.5 * deltadistH;
                     rayXH += 0.5 * deltaXH;
@@ -953,7 +953,7 @@ void DDA() {
                         dofV++;
                     }
                 }
-                else if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 5) {
+                else if (raymapV > 0 && raymapV < MAPX * MAPY && map[raymapV] == 3) {
                     dofV = DOF;
                     distV += 0.5 * deltadistV;
                     rayXV += 0.5 * deltaXV;
@@ -1197,7 +1197,7 @@ void initmap(FILE* fptr) {
         parsel(fptr, mapXY[0], mapline,-1);
         for (j=0;j<mapXY[0];j++) {
             map[i*mapXY[0] + j] = mapline[j];
-    		if (map[i * MAPX + j] == 2 || map[i * MAPX + j] == 3)
+    		if (map[i * MAPX + j] == 2)
 			    DOORN++;
         }
     }
@@ -1209,13 +1209,19 @@ void initmap(FILE* fptr) {
     DOORN = 0;
     for (i=0;i<MAPY;i++) {
     	for (j=0;j<MAPX;j++) {
-    		if (map[i * MAPX + j] == 2 || map[i * MAPX + j] == 3) {
+    		if (map[i * MAPX + j] == 2) {
+                if (map[i * MAPX + j - 1] == 1 && map[i * MAPX + j + 1] == 1)
+                    map[i * MAPX + j] = 12;
     			doors[DOORN].x = j;
 			    doors[DOORN].y = i;
 			    doors[DOORN].exte = 64.0;
 			    doors[DOORN].exte_rate = 0.0;
 			    doors[DOORN].wait = 0;
 			    DOORN++;
+            }
+    		if (map[i * MAPX + j] == 3) {
+                if (map[i * MAPX + j - 1] == 1 && map[i * MAPX + j + 1] == 1)
+                    map[i * MAPX + j] = 13;
 			}
 		}
 	}
@@ -1418,7 +1424,7 @@ int main(int argc, char* argv[]) {
     glutInitWindowSize((RES - 2) * SCALE, (HEIGHT - 2) * FLOOR_SCALE);
     glutCreateWindow("Raycaster");
     init();
-    atexit(finalexit);
+    glutCloseFunc(finalexit);
     glutDisplayFunc(display);
     glutKeyboardFunc(keydown);
     glutKeyboardUpFunc(keyup);
