@@ -20,5 +20,7 @@
 224 161 10000 FF0000 // static light position intencity color
 352 288 10000 00FF00
 224 288 10000 0000FF
-1 // sprites
-224 480 000 20 20 10000 FFFFFF // position direction intencity color
+3 // sprites
+224 480 000 20 20 1000 FFFFFF // position direction intencity color
+224 480 000 22 20 1000 FFFFFF // position direction intencity color
+224 480 000 25 20 1000 FFFFFF // position direction intencity color
