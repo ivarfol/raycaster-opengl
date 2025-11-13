@@ -26,6 +26,8 @@ interp interpolate(point p0, point p1) {
     interp out;
     out.length = p1.y - p0.y;
     out.ptrx = malloc(out.length * sizeof(int));
+    if (out.length == 0)
+        return out;
     int i;
     double dx = (p0.x - p1.x) / (double)(p0.y - p1.y);
     for (i=0;i<out.length;i++) {
@@ -75,7 +77,7 @@ void filled_tr(point points_[3], bool texture[], int width) {
 
     int i, j;
     for (i=points[0].y;i<points[2].y;i++) {
-        for (j=xleft[i - points[0].y];j<xright[i-points[0].y]+1;j++) {
+        for (j=xleft[i - points[0].y];j<xright[i-points[0].y]+1 || j == xleft[i - points[0].y];j++) {
             texture[j + i * width] = 1;
         }
     }
