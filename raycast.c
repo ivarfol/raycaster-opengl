@@ -36,6 +36,10 @@
 
 #define OPACITY 0.25
 
+#define DOOR_WAIT 300
+
+#define MS_PER_FRAME 16
+
 float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
 float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
 
@@ -128,7 +132,7 @@ float angles[RES];
 int *map, light_map_length;
 
 int mapX, mapY, spritenum;
-int DOORN = 0;
+int doornum;
 
 float amb[CHANNELS], fog[CHANNELS];
 float *stationary, *brightness;
@@ -193,7 +197,6 @@ door_struct* getDoor(int x, int y) {
 }
 
 point path_free(float posX, float posY, float angle, float targdist) {
-    float r, g, b;
     int dofH = LDOF;
     int dofV = LDOF;
     float deltaYV, deltaYH;
@@ -201,7 +204,6 @@ point path_free(float posX, float posY, float angle, float targdist) {
     float rayXV, rayYV;
     float rayXH, rayYH;
     float deltadistH, deltadistV;
-    int ray, i;
     float distH = 10000.0f;
     float distV = 10000.0f;
 
@@ -353,7 +355,8 @@ void genmissing() {
         for (j=0;j<TEXWIDTH;j++) {
             if ((i < TEXWIDTH / 2 && j < TEXWIDTH / 2) || (i >= TEXWIDTH / 2&& j >= TEXWIDTH / 2))
                 tmpc = 1;
-            else tmpc = 0;
+            else
+                tmpc = 0;
             texture_missing[i * TEXWIDTH + j][red] = tmpc;
             texture_missing[i * TEXWIDTH + j][green] = 0;
             texture_missing[i * TEXWIDTH + j][blue] = tmpc;
@@ -620,23 +623,14 @@ void check_inputs() {
         movef(PLAYER_SPEED, move_direction_v, &playerX, &playerY, 0.2f);
     }
 
-    int i;
-    for (i=0;i<spritenum;i++) {
-        sprites[i].direction += sprites[i].deltadir * delta_frames + PI;
-        radian_change(&sprites[i].direction);
-        movef(PLAYER_SPEED / 4, sprites[i].direction, &sprites[i].posX, &sprites[i].posY, sprites[i].deltamove);
-        sprites[i].direction -= PI;
-        radian_change(&sprites[i].direction);
-        sprites[i].source->posX = sprites[i].posX;
-        sprites[i].source->posY = sprites[i].posY;
-    }
+    
 
     float rayXH, rayYH, distH, rayXV, rayYV, distV;
     float Sin = sin(playerAngle);
     float Cos = cos(playerAngle);
     float Tan = Sin / Cos;
     float invTan = Cos / Sin;
-    int raymapX, raymapY;
+    int raymapX, raymapY, i;
     door_struct* door;
     if (newkeys.space) {
         //up/down
@@ -721,7 +715,7 @@ void render() {
         }
         */
 
-        deltatextureY = 64.0 / render_infoP->l_height;
+        deltatextureY = TEXHEIGHT / render_infoP->l_height;
         offset = 0.0f;
         if (render_infoP->l_height > HEIGHT) {
             start = 0;
@@ -774,9 +768,9 @@ void render() {
         		fogstrength = 0;
         	else if (fogstrength > 1.0)
         		fogstrength = 1.0;
-            tex_index = (int)(floor_ray * render_infoP->Sin + playerY) % 64 * 64 + (int)(floor_ray * render_infoP->Cos + playerX) % 64;
-            if (tex_index > 63 * 64)
-                tex_index = 63*64;
+            tex_index = (int)(floor_ray * render_infoP->Sin + playerY) % TEXHEIGHT * TEXWIDTH + (int)(floor_ray * render_infoP->Cos + playerX) % TEXWIDTH;
+            if (tex_index >= TEXWIDTH * TEXHEIGHT)
+                tex_index = TEXWIDTH * TEXHEIGHT-1;
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
@@ -887,7 +881,7 @@ void DDA() {
             deltaXV = - TILE;
             deltaYV = - TILE * Tan;
             deltadistV = - TILE / Cos;
-            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) - 0.001;
+            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) - 0.0001;
             rayYV = playerY - (playerX - rayXV) * Tan;
             distV = - (playerX - rayXV) / Cos;
             dofV = 0;
@@ -900,56 +894,53 @@ void DDA() {
         }
         int raymapXH, raymapYH, raymapH;
         int raymapXV, raymapYV, raymapV;
+        bool Hpropagate, Vpropagate;
         door_struct* doorH;
         door_struct* doorV;
         doorH = NULL;
         doorV = NULL;
         while (dofV < DOF || dofH < DOF) {
             if (dofH < DOF && distH <= distV) {
+                Hpropagate = false;
                 raymapXH = (int)(rayXH)>>TILE_POW;
                 raymapYH = (int)(rayYH)>>TILE_POW;
                 raymapH = raymapXH + raymapYH * mapX;
-                if (raymapH > 0 && raymapH < mapX * mapY && !visible[raymapH]) {
-                    visible[raymapH] = expandable[raymapH]  = true;
-                }
-                if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 1) {
-                    dofH = DOF;
-                    doorH = NULL;
-                    is_fulltile = true;
-                    break;
-                }
-                else if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 12) {
-                    doorH = getDoor(raymapXH, raymapYH);
-                    if (doorH->x * TILE - doorH->exte + TILE < rayXH + 0.5 * deltaXH) {
+                if (raymapH > 0 && raymapH < mapX * mapY) {
+                    if (!visible[raymapH])
+                        visible[raymapH] = expandable[raymapH]  = true;
+                    if (map[raymapH] == 1) {
+                        dofH = DOF;
+                        doorH = NULL;
+                        is_fulltile = true;
+                        break;
+                    }
+                    else if (map[raymapH] == 12 && (int)(rayXH + 0.5 * deltaXH)>>TILE_POW == (int)(rayXH)>>TILE_POW) {
+                        doorH = getDoor(raymapXH, raymapYH);
+                        if (doorH->x * TILE - doorH->exte + TILE < rayXH + 0.5 * deltaXH) {
+                            dofH = DOF;
+                            distH += 0.5 * deltadistH;
+                            rayXH += 0.5 * deltaXH;
+                            rayYH += 0.5 * deltaYH;
+                            break;
+                        }
+                        else
+                            Hpropagate = true;
+                    }
+                    else if (map[raymapH] == 13 && (int)(rayXH + 0.5 * deltaXH)>>TILE_POW == (int)(rayXH)>>TILE_POW) {
                         dofH = DOF;
                         distH += 0.5 * deltadistH;
                         rayXH += 0.5 * deltaXH;
                         rayYH += 0.5 * deltaYH;
-                        raymapXH = (int)(rayXH)>>TILE_POW;
-                        raymapYH = (int)(rayYH)>>TILE_POW;
-                        raymapH = raymapXH + raymapYH * mapX;
+                        doorH = NULL;
+                        doorV = NULL;
                         break;
                     }
-                    else {
-                        rayXH += deltaXH;
-                        rayYH += deltaYH;
-                        distH += deltadistH;
-                        dofH++;
-                    }
+                    else
+                        Hpropagate = true;
                 }
-                else if (raymapH > 0 && raymapH < mapX * mapY && map[raymapH] == 13) {
-                    dofH = DOF;
-                    distH += 0.5 * deltadistH;
-                    rayXH += 0.5 * deltaXH;
-                    rayYH += 0.5 * deltaYH;
-                    raymapXH = (int)(rayXH)>>TILE_POW;
-                    raymapYH = (int)(rayYH)>>TILE_POW;
-                    raymapH = raymapXH + raymapYH * mapX;
-                    doorH = NULL;
-                    doorV = NULL;
-                    break;
-                }
-                else {
+                else
+                    Hpropagate = true;
+                if (Hpropagate) {
                     rayXH += deltaXH;
                     rayYH += deltaYH;
                     distH += deltadistH;
@@ -957,50 +948,46 @@ void DDA() {
                 }
             }
             else if (dofV < DOF && distV < distH) {
+                Vpropagate = false;
                 raymapXV = (int)(rayXV)>>TILE_POW;
                 raymapYV = (int)(rayYV)>>TILE_POW;
                 raymapV = raymapXV + raymapYV * mapX;
-                if (raymapV > 0 && raymapV < mapX * mapY && !visible[raymapV]) {
-                    visible[raymapV] = expandable[raymapV] = true;
-                }
-                if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 1) {
-                    dofV = DOF;
-                    doorV = NULL;
-                    is_fulltile = true;
-                    break;
-                }
-                else if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 2) {
-                    doorV = getDoor(raymapXV, raymapYV);
-                    if (doorV->y * TILE - doorV->exte + TILE < rayYV + 0.5 * deltaYV) {
+                if (raymapV > 0 && raymapV < mapX * mapY) {
+                    if (!visible[raymapV])
+                        visible[raymapV] = expandable[raymapV] = true;
+                    if (map[raymapV] == 1) {
+                        dofV = DOF;
+                        doorV = NULL;
+                        is_fulltile = true;
+                        break;
+                    }
+                    else if (map[raymapV] == 2 && (int)(rayYV + 0.5 * deltaYV)>>TILE_POW == (int)(rayYV)>>TILE_POW) {
+                        doorV = getDoor(raymapXV, raymapYV);
+                        if (doorV->y * TILE - doorV->exte + TILE < rayYV + 0.5 * deltaYV) {
+                            dofV = DOF;
+                            distV += 0.5 * deltadistV;
+                            rayXV += 0.5 * deltaXV;
+                            rayYV += 0.5 * deltaYV;
+                            break;
+                        }
+                        else
+                            Vpropagate = true;
+                    }
+                    else if (map[raymapV] == 3 && (int)(rayYV + 0.5 * deltaYV)>>TILE_POW == (int)(rayYV)>>TILE_POW) {
                         dofV = DOF;
                         distV += 0.5 * deltadistV;
                         rayXV += 0.5 * deltaXV;
                         rayYV += 0.5 * deltaYV;
-                        raymapXV = (int)(rayXV)>>TILE_POW;
-                        raymapYV = (int)(rayYV)>>TILE_POW;
-                        raymapV = raymapXV + raymapYV * mapX;
+                        doorH = NULL;
+                        doorV = NULL;
                         break;
                     }
-                    else {
-                        rayXV += deltaXV;
-                        rayYV += deltaYV;
-                        distV += deltadistV;
-                        dofV++;
-                    }
+                    else
+                        Vpropagate = true;
                 }
-                else if (raymapV > 0 && raymapV < mapX * mapY && map[raymapV] == 3) {
-                    dofV = DOF;
-                    distV += 0.5 * deltadistV;
-                    rayXV += 0.5 * deltaXV;
-                    rayYV += 0.5 * deltaYV;
-                    raymapXV = (int)(rayXV)>>TILE_POW;
-                    raymapYV = (int)(rayYV)>>TILE_POW;
-                    raymapV = raymapXV + raymapYV * mapX;
-                    doorH = NULL;
-                    doorV = NULL;
-                    break;
-                }
-                else {
+                else
+                    Vpropagate = true;
+                if (Vpropagate) {
                     rayXV += deltaXV;
                     rayYV += deltaYV;
                     distV += deltadistV;
@@ -1026,13 +1013,12 @@ void DDA() {
 
 
 
-        float textureX;
         int br_offset = 0;
         if (distV <= distH) {
             if (doorV == NULL) {
                 render_info[ray].isdoor = false;
                 if (Cos > 0) {
-                    render_info[ray].textureX = (int)rayYV % 64;
+                    render_info[ray].textureX = (int)rayYV % TEXWIDTH;
                     if (is_fulltile) {
                         if (render_info[ray].textureX>= TILE - LIGHT_GRID)
                             br_offset = -1*mapX*(TILE/LIGHT_GRID);
@@ -1041,7 +1027,7 @@ void DDA() {
                     }
                 }
                 else {
-                    render_info[ray].textureX = 63 - (int)rayYV % 64;
+                    render_info[ray].textureX = TEXWIDTH - 1 - (int)rayYV % TEXWIDTH;
                     if (is_fulltile) {
                         if (render_info[ray].textureX>= TILE - LIGHT_GRID)
                             br_offset = 1*mapX*(TILE/LIGHT_GRID);
@@ -1051,7 +1037,7 @@ void DDA() {
                 }
             }
             else {
-                render_info[ray].textureX = -64 + (int)rayYV % 64 + ceil(doorV->exte);
+                render_info[ray].textureX = -TEXWIDTH + (int)rayYV % TEXWIDTH + ceil(doorV->exte);
                 render_info[ray].isdoor = true;
             }
             render_info[ray].dist = distV;
@@ -1063,7 +1049,7 @@ void DDA() {
             if (doorH == NULL) {
                 render_info[ray].isdoor = false;
                 if (Sin < 0) {
-                    render_info[ray].textureX = (int)rayXH % 64;
+                    render_info[ray].textureX = (int)rayXH % TEXWIDTH;
                     if (is_fulltile) {
                         if (render_info[ray].textureX>= TILE - LIGHT_GRID)
                             br_offset = -1;
@@ -1072,7 +1058,7 @@ void DDA() {
                     }
                 }
                 else {
-                    render_info[ray].textureX = 63 - (int)rayXH % 64;
+                    render_info[ray].textureX = TEXWIDTH - 1 - (int)rayXH % TEXWIDTH;
                     if (is_fulltile) {
                         if (render_info[ray].textureX>= TILE - LIGHT_GRID)
                             br_offset = 1;
@@ -1082,7 +1068,7 @@ void DDA() {
                 }
             }
             else {
-                render_info[ray].textureX = -64 + (int)rayXH % 64 + ceil(doorH->exte);
+                render_info[ray].textureX = -TEXWIDTH + (int)rayXH % TEXWIDTH + ceil(doorH->exte);
                 render_info[ray].isdoor = true;
             }
             render_info[ray].dist = distH;
@@ -1103,23 +1089,23 @@ void DDA() {
 void doorf() {
     door_struct* door;
     door = &doors[0];
-    int doornum;
-    for (doornum=0;doornum<DOORN;doornum++) {
+    int door_count;
+    for (door_count=0;door_count<doornum;door_count++) {
         if (door->exte_rate < 0) {
-            door->exte += door->exte_rate * delta_frames / 15;
+            door->exte += door->exte_rate * delta_frames / MS_PER_FRAME;
             if (door->exte < 0) {
                 door->exte_rate = 0.5;
                 door->exte = 0.0;
-                door->wait = 300;
+                door->wait = DOOR_WAIT;
             }
         }
         else if (door->wait > 0)
             door->wait -= 1 * delta_frames / 15;
-        else if ((((int)playerX)>>6) != door->x || (((int)playerY)>>6) != door->y) {
-            door->exte += door->exte_rate * delta_frames / 15;
-            if (door->exte > 64) {
+        else if ((((int)playerX)>>TILE_POW) != door->x || (((int)playerY)>>TILE_POW) != door->y) {
+            door->exte += door->exte_rate * delta_frames / MS_PER_FRAME;
+            if (door->exte > TILE) {
                 door->exte_rate = 0.0;
-                door->exte = 64.0;
+                door->exte = TILE;
             }
         }
         door++;
@@ -1150,6 +1136,8 @@ void display() {
     current_frame = glutGet(GLUT_ELAPSED_TIME);
     delta_frames = current_frame - last_frame;
     last_frame = glutGet(GLUT_ELAPSED_TIME);
+    if (delta_frames > MS_PER_FRAME * 8)
+        delta_frames = 0;
     check_inputs();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     doorf();
@@ -1165,6 +1153,13 @@ void display() {
     for (i=0;i<spritenum;i++) {
         gen_light(*sprites[i].source, dlight_map);
         combine_light(brightness, dlight_map);
+        sprites[i].direction += sprites[i].deltadir * delta_frames + PI;
+        radian_change(&sprites[i].direction);
+        movef(PLAYER_SPEED / 4.0, sprites[i].direction, &sprites[i].posX, &sprites[i].posY, sprites[i].deltamove);
+        sprites[i].direction -= PI;
+        radian_change(&sprites[i].direction);
+        sprites[i].source->posX = sprites[i].posX;
+        sprites[i].source->posY = sprites[i].posY;
     }
 
     DDA();
@@ -1280,16 +1275,16 @@ void initmap(FILE* fptr) {
                     vnum++;
             }
     		if (map[i * mapX + j] == 2)
-			    DOORN++;
+			    doornum++;
         }
     }
     vert = malloc((vnum + 4) * sizeof(fpoint));
-    doors = malloc(sizeof(*doors) * DOORN);
+    doors = malloc(sizeof(*doors) * doornum);
     if (doors == NULL) {
         exitmap(5);
         exit(1);
     }
-    DOORN = 0;
+    doornum = 0;
     float vshiftX, vshiftY;
     vnum = 0;
     for (i=0;i<mapY;i++) {
@@ -1297,12 +1292,12 @@ void initmap(FILE* fptr) {
     		if (map[i * mapX + j] == 2) {
                 if (map[i * mapX + j - 1] == 1 && map[i * mapX + j + 1] == 1)
                     map[i * mapX + j] = 12;
-    			doors[DOORN].x = j;
-			    doors[DOORN].y = i;
-			    doors[DOORN].exte = 64.0;
-			    doors[DOORN].exte_rate = 0.0;
-			    doors[DOORN].wait = 0;
-			    DOORN++;
+    			doors[doornum].x = j;
+			    doors[doornum].y = i;
+			    doors[doornum].exte = TILE;
+			    doors[doornum].exte_rate = 0.0;
+			    doors[doornum].wait = 0;
+			    doornum++;
             }
     		else if (map[i * mapX + j] == 3) {
                 if (map[i * mapX + j - 1] == 1 && map[i * mapX + j + 1] == 1)
