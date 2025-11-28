@@ -7,46 +7,54 @@
 #define PLAYER_SPEED 5
 #define RES 256
 #define SCALE 4
+#define HEIGHT 512
+
+#define FLOOR_SCALE 1
+
+#define PLHEIGHT 32
+
 #define FOV 0.5 * PI
 #define SHIFT (FOV / 2)
 
 #define MAP_SCALE 16
-#define LIGHT_GRID 2
 
+#define LIGHT_GRID 2
 #define LIGHT_POW 1
-#define TILE_POW 6
 
 #define TEXWIDTH 64
+
 #define TEXHEIGHT TEXWIDTH
-#define CHANNELS 3
 #define TILE 64
+#define TILE_POW 6
 
-#define PLHEIGHT 32
-
-#define FLOOR_SCALE 1
-#define HEIGHT 512
-
-#define MIN_BRIGHTNESS 0.01
-
+#define MIN_BRIGHTNESS 0.005
+#define CHANNELS 3
 #define LDOF 10
-
 #define LTEX_S (32 * (TILE / LIGHT_GRID))
+
+#define OPACITY 0.25
+#define DOOR_WAIT 300
+#define MS_PER_FRAME 16
+
+#define INVIS_R 0
+#define INVIS_G 0
+#define INVIS_B 0
 
 #define SQR(a) ((a)*(a))
 
-#define OPACITY 0.25
-
-#define DOOR_WAIT 300
-
-#define MS_PER_FRAME 16
-
-float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
-float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
+#define MAGIC (HEIGHT / SCALE / 64)
 
 extern int parse(FILE* fptr, float texture[][CHANNELS]);
 extern void parsel(FILE* fptr, int num, int out[], int color_pos);
 
 enum { red, green, blue };
+
+typedef struct {
+    int x;
+    int y;
+} point;
+
+extern void filled_tr(point interv[], bool shadow[], int x);
 
 typedef struct {
     unsigned w : 1;
@@ -66,16 +74,21 @@ keys oldkeys;
 keys newkeys;
 
 typedef struct {
-    int x;
-    int y;
-} point;
+    float posX;
+    float posY;
+    float angle;
+} player_struct;
+player_struct player;
+
+typedef struct {
+    float dist;
+    int index;
+} distindex;
 
 typedef struct {
     float x;
     float y;
 } fpoint;
-
-extern void filled_tr(point interv[], bool shadow[], int x);
 
 typedef struct {
     int x, y, wait;
@@ -101,7 +114,6 @@ typedef struct {
     float posX;
     float posY;
     float intens;
-    unsigned is_static : 1;
     float r;
     float g;
     float b;
@@ -109,53 +121,63 @@ typedef struct {
 light_source *lights;
 
 typedef struct {
+    float direction;
+    float deltadir;
+    float deltamove;
+    light_source* source;
+} active_light_struct;
+active_light_struct *ac_lights;
+
+typedef struct {
     float posX;
     float posY;
     float direction;
     float deltadir;
     float deltamove;
-    light_source* source;
-} sprite_strct;
-sprite_strct *sprites;
+} sprite_struct;
+sprite_struct *sprites;
+
+float texture_one[TEXWIDTH * TEXHEIGHT][CHANNELS];
+float texture_missing[TEXWIDTH * TEXHEIGHT][CHANNELS];
 
 double ltexture[SQR(LTEX_S)];
 
-float playerX, playerY, playerAngle;
+float angles[RES], amb[CHANNELS], fog[CHANNELS];
+
 bool show_map = true;
-float move_direction_v, move_direction_h;
-double floor_const = HEIGHT * RES / 2 / 4 / tan(0.5*PI -SHIFT) ; // aspect 1/2
+double floor_const;
 float current_frame = 0.0;
-float delta_frames, last_frame;
+float delta_frames, last_frame, pla_sep, pla_sep_scaled;
 
-float angles[RES];
+int *map, light_map_length, mapX, mapY, sprite_num, ac_light_num;
+int doornum, vnum;
+int exit_level = -1;
 
-int *map, light_map_length;
-
-int mapX, mapY, spritenum;
-int doornum;
-
-float amb[CHANNELS], fog[CHANNELS];
 float *stationary, *brightness;
 
 fpoint *vert;
-int vnum;
 
 bool *visible, *expandable;
 
 float DOF, fade_start, delta_fade;
 
 
-int intamb[3];
-int intfog[3];
+int intamb[CHANNELS], intfog[CHANNELS];
 
-void exitmap(int num) {
-    switch (num) {
-    case 7:
-        free(lights);
-        lights = NULL;
-    case 6:
+void exitmap(void) {
+    switch (exit_level) {
+    case 9:
         free(sprites);
         sprites = NULL;
+    case 8:
+        free(lights);
+        lights = NULL;
+    case 7:
+        free(ac_lights);
+        ac_lights = NULL;
+    case 6:
+        free(vert);
+        vert = NULL;
     case 5:
         free(doors);
         doors = NULL;
@@ -175,10 +197,6 @@ void exitmap(int num) {
         free(map);
         map = NULL;
     }
-}
-
-void finalexit() {
-    exitmap(7);
 }
 
 void radian_change(float *a) {
@@ -364,7 +382,7 @@ void genmissing() {
     }
 }
 
-void gen_light(light_source light, float light_map[]) {
+void gen_light(light_source light, float light_map[], bool is_static) {
     int startX, endX;
     int startY, endY;
     float max_dist = sqrt(light.intens / MIN_BRIGHTNESS);
@@ -483,7 +501,7 @@ void gen_light(light_source light, float light_map[]) {
     int bright_index;
     for (tileY = startY;tileY<endY;tileY++) {
         for (tileX = startX;tileX<endX;tileX++) {
-            if (visible[(tileY>>(TILE_POW-LIGHT_POW))*mapX + (tileX>>(TILE_POW-LIGHT_POW))] || light.is_static == 1) {
+            if (visible[(tileY>>(TILE_POW-LIGHT_POW))*mapX + (tileX>>(TILE_POW-LIGHT_POW))] || is_static) {
                 bright_index = tileY * mapX * (TILE / LIGHT_GRID) + tileX;
                 mult = OPACITY;
                 if (shadow[bright_index])
@@ -580,6 +598,7 @@ void movef(int speed, float move_direction, float *positionX, float *positionY, 
 }
 
 void check_inputs() {
+    float move_direction_v, move_direction_h;
     if (newkeys.p) {
         exit(0);
     }
@@ -597,12 +616,12 @@ void check_inputs() {
         move_direction_v = PI;
     }
     if (newkeys.q) {
-        playerAngle -= 0.005 * delta_frames;
-        radian_change(&playerAngle);
+        player.angle -= 0.005 * delta_frames;
+        radian_change(&player.angle);
     }
     if (newkeys.e) {
-        playerAngle += 0.005 * delta_frames;
-        radian_change(&playerAngle);
+        player.angle += 0.005 * delta_frames;
+        radian_change(&player.angle);
     }
     if (newkeys.m && !oldkeys.m)
         show_map -= 1;
@@ -613,21 +632,21 @@ void check_inputs() {
             if (move_direction_v == 0.0 && move_direction_h == (float)(0.75 * PI))
                 move_direction_h = 1.75 * PI;
         }
-        move_direction_h += playerAngle;
+        move_direction_h += player.angle;
         radian_change(&move_direction_h);
-        movef(PLAYER_SPEED, move_direction_h, &playerX, &playerY, 0.2f);
+        movef(PLAYER_SPEED, move_direction_h, &player.posX, &player.posY, 0.2f);
     }
     else if (move_direction_v >= 0.0) {
-        move_direction_v += playerAngle;
+        move_direction_v += player.angle;
         radian_change(&move_direction_v);
-        movef(PLAYER_SPEED, move_direction_v, &playerX, &playerY, 0.2f);
+        movef(PLAYER_SPEED, move_direction_v, &player.posX, &player.posY, 0.2f);
     }
 
     
 
     float rayXH, rayYH, distH, rayXV, rayYV, distV;
-    float Sin = sin(playerAngle);
-    float Cos = cos(playerAngle);
+    float Sin = sin(player.angle);
+    float Cos = cos(player.angle);
     float Tan = Sin / Cos;
     float invTan = Cos / Sin;
     int raymapX, raymapY, i;
@@ -635,35 +654,35 @@ void check_inputs() {
     if (newkeys.space) {
         //up/down
         if (Sin < -0.0001) {
-            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) - 0.0001;
-            rayXH = playerX - (playerY - rayYH) * invTan;
-            distH = - (playerY - rayYH) / Sin;
+            rayYH = ((((int)player.posY)>>TILE_POW)<<TILE_POW) - 0.0001;
+            rayXH = player.posX - (player.posY - rayYH) * invTan;
+            distH = - (player.posY - rayYH) / Sin;
         }
         else if (Sin > 0.0001) {
-            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) + TILE;
-            rayXH = playerX - (playerY - rayYH) * invTan;
-            distH = - (playerY - rayYH) / Sin;
+            rayYH = ((((int)player.posY)>>TILE_POW)<<TILE_POW) + TILE;
+            rayXH = player.posX - (player.posY - rayYH) * invTan;
+            distH = - (player.posY - rayYH) / Sin;
         }
         else {
-            rayXH = playerX;
-            rayYH = playerY;
+            rayXH = player.posX;
+            rayYH = player.posY;
             distH = 10000.0f;
         }
 
         //left/right
         if (Cos > 0.0001) {
-            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) + TILE;
-            rayYV = playerY - (playerX - rayXV) * Tan;
-            distV = - (playerX - rayXV) / Cos;
+            rayXV = ((((int)player.posX)>>TILE_POW)<<TILE_POW) + TILE;
+            rayYV = player.posY - (player.posX - rayXV) * Tan;
+            distV = - (player.posX - rayXV) / Cos;
         }
         else if (Cos < -0.0001) {
-            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) - 0.001;
-            rayYV = playerY - (playerX - rayXV) * Tan;
-            distV = - (playerX - rayXV) / Cos;
+            rayXV = ((((int)player.posX)>>TILE_POW)<<TILE_POW) - 0.001;
+            rayYV = player.posY - (player.posX - rayXV) * Tan;
+            distV = - (player.posX - rayXV) / Cos;
         }
         else {
-            rayXV = playerX;
-            rayYV = playerY;
+            rayXV = player.posX;
+            rayYV = player.posY;
             distV = 10000.0f;
         }
         if (distV < distH) {
@@ -679,6 +698,13 @@ void check_inputs() {
     }
     glutPostRedisplay();
 }
+
+int compare_dist(const void *a, const void *b) {
+    distindex *distindexA = (distindex *)a;
+    distindex *distindexB = (distindex *)b;
+    return (distindexB->dist - distindexA->dist);
+}
+
 
 void render() {
     int ray;
@@ -700,7 +726,7 @@ void render() {
             glColor3f(0, 1, 0);
             glLineWidth(1);
             glBegin(GL_LINES);
-            glVertex2i(playerX / TILE * MAP_SCALE, playerY / TILE * MAP_SCALE);
+            glVertex2i(player.posX / TILE * MAP_SCALE, player.posY / TILE * MAP_SCALE);
             glVertex2i(render_infoP->rayX / TILE * MAP_SCALE, render_infoP->rayY / TILE * MAP_SCALE);
             glEnd();
         }
@@ -768,15 +794,15 @@ void render() {
         		fogstrength = 0;
         	else if (fogstrength > 1.0)
         		fogstrength = 1.0;
-            tex_index = (int)(floor_ray * render_infoP->Sin + playerY) % TEXHEIGHT * TEXWIDTH + (int)(floor_ray * render_infoP->Cos + playerX) % TEXWIDTH;
+            tex_index = (int)(floor_ray * render_infoP->Sin + player.posY) % TEXHEIGHT * TEXWIDTH + (int)(floor_ray * render_infoP->Cos + player.posX) % TEXWIDTH;
             if (tex_index >= TEXWIDTH * TEXHEIGHT)
                 tex_index = TEXWIDTH * TEXHEIGHT-1;
             r = texture_missing[tex_index][red];
             g = texture_missing[tex_index][green];
             b = texture_missing[tex_index][blue];
             
-            lightX = (int)(floor_ray * render_infoP->Cos + playerX)>>LIGHT_POW;
-            lightY = (int)(floor_ray * render_infoP->Sin + playerY)>>LIGHT_POW;
+            lightX = (int)(floor_ray * render_infoP->Cos + player.posX)>>LIGHT_POW;
+            lightY = (int)(floor_ray * render_infoP->Sin + player.posY)>>LIGHT_POW;
             bright_index = lightY*mapX*(TILE/LIGHT_GRID) + lightX;
             if (light_map_length * CHANNELS <= bright_index || bright_index < 0)
                 bright_index = 0;
@@ -811,6 +837,95 @@ void render() {
         }
         render_infoP++;
     }
+    distindex spr_dist[sprite_num];
+    for (i=0;i<sprite_num;i++) {
+        spr_dist[i].dist = sqrt(SQR(player.posX - sprites[i].posX) + SQR(player.posY - sprites[i].posY));
+        spr_dist[i].index = i;
+    }
+    qsort(spr_dist, sprite_num, sizeof(distindex), compare_dist);
+    float spr_angle;
+    float spr_hpos;
+    float delta_angle, delta_textureX, height, width, textureX;
+    int columnX;
+    float deltaLX, deltaLY, startLX, startLY;
+    int br_index;
+    for (i=0;i<sprite_num;i++) {
+        if (spr_dist[i].dist < (fade_start + delta_fade) * TILE) {
+            spr_angle = atan((player.posY - sprites[spr_dist[i].index].posY) / (player.posX - sprites[spr_dist[i].index].posX));
+            if (player.posX < sprites[spr_dist[i].index].posX)
+                spr_angle -= PI;
+            radian_change(&spr_angle);
+            delta_angle = spr_angle - player.angle;
+            radian_change(&delta_angle);
+            height = (float)(pla_sep_scaled * HEIGHT) / spr_dist[i].dist / -cos(delta_angle);
+            width = height / SCALE;
+            spr_hpos = pla_sep * tan(delta_angle) + RES / 2 - width / 2;
+            delta_angle += 0.5 * PI;
+            if (delta_angle > PI && spr_hpos < RES && spr_hpos + width > 0) {
+                //printf("%f %f %f %f %f\n", spr_angle, spr_hpos, delta_angle, height, spr_dist[i].dist);
+                //printf("%d %d %f %f\n", TILE, HEIGHT, spr_dist[i].dist, height);
+                deltatextureY = TEXHEIGHT / height;
+                offset = 0.0f;
+                if (height > HEIGHT) {
+                    start = 0;
+                    end = HEIGHT;
+                    offset = (height - HEIGHT) / 2.0;
+                }
+                else {
+                    start = HEIGHT / 2.0 - 0.5 * height;
+                    end = HEIGHT / 2.0 + 0.5 * height;
+                }
+                delta_textureX = TEXWIDTH / width;
+                textureX = 0;
+
+                fogstrength = -TILE / 100.0 * fade_start / delta_fade + 1.0 / (float)(TILE) / delta_fade * spr_dist[i].dist;
+                if (fogstrength < 0)
+                    fogstrength = 0;
+                else if (fogstrength > 1.0)
+                    fogstrength = 1.0;
+
+                startLX = sprites[spr_dist[i].index].posX;
+                startLY = sprites[spr_dist[i].index].posY;
+                deltaLX = TILE / width * -sin(player.angle);
+                deltaLY = TILE / width * cos(player.angle);
+                //printf("%f %f\n", deltaLX, deltaLY);
+                startLX -= width * deltaLX / 2;
+                startLY -= width * deltaLY / 2;
+                for (columnX = spr_hpos;columnX < RES && columnX < spr_hpos + width-1;columnX++) {
+                    if (columnX > 0 && spr_dist[i].dist < render_info[columnX].dist) {
+                        br_index = ((int)(startLY)>>LIGHT_POW) * mapX * (TILE / LIGHT_GRID) + ((int)(startLX)>>LIGHT_POW);
+                        textureY = offset * deltatextureY;
+                        for (hposition = start;hposition<end;hposition++) {
+                            tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
+                            r = texture_missing[tex_index][red];
+                            g = texture_missing[tex_index][green];
+                            b = texture_missing[tex_index][blue];
+                            if (!(r == INVIS_R && g == INVIS_G && b == INVIS_B)) {
+                                r *= brightness[br_index * CHANNELS + red];
+                                g *= brightness[br_index * CHANNELS + green];
+                                b *= brightness[br_index * CHANNELS + blue];
+                                r = r * (1.0 - fogstrength) + fog[red] * fogstrength;
+                                g = g * (1.0 - fogstrength) + fog[green] * fogstrength;
+                                b = b * (1.0 - fogstrength) + fog[blue] * fogstrength;
+
+                                glColor3f(r, g, b);
+                                glBegin(GL_POINTS);
+                                glVertex2i(columnX * SCALE - SCALE, hposition);
+                                glEnd();
+                            }
+                            textureY += deltatextureY;
+                        }
+                    }
+
+                    textureX += delta_textureX;
+                    startLX += deltaLX;
+                    startLY += deltaLY;
+                    if (textureX >= TEXWIDTH)
+                        textureX = TEXWIDTH-1;
+                }
+            }
+        }
+    }
 }
 
 void DDA() {
@@ -825,14 +940,14 @@ void DDA() {
     bool is_fulltile = false;
     for (i=0;i<mapX*mapY;i++)
         visible[i] = expandable[i] = false;
-    visible[(((int)playerY)>>TILE_POW) * mapX + (((int)playerX)>>TILE_POW)] = true;
-    expandable[(((int)playerY)>>TILE_POW) * mapX + (((int)playerX)>>TILE_POW)] = true;
+    visible[(((int)player.posY)>>TILE_POW) * mapX + (((int)player.posX)>>TILE_POW)] = true;
+    expandable[(((int)player.posY)>>TILE_POW) * mapX + (((int)player.posX)>>TILE_POW)] = true;
     for (ray = 0; ray<RES;ray++) {
         float distH = 10000.0f;
         float distV = 10000.0f;
-        float angle = playerAngle - SHIFT + angles[ray];
+        float angle = player.angle - SHIFT + angles[ray];
         radian_change(&angle);
-        float correct_fish = playerAngle - angle;
+        float correct_fish = player.angle - angle;
         radian_change(&correct_fish);
         correct_fish = cos(correct_fish);
 
@@ -846,23 +961,23 @@ void DDA() {
             deltaYH = - TILE;
             deltaXH = - TILE * invTan;
             deltadistH = - TILE / Sin;
-            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) - 0.0001;
-            rayXH = playerX - (playerY - rayYH) * invTan;
-            distH = - (playerY - rayYH) / Sin;
+            rayYH = ((((int)player.posY)>>TILE_POW)<<TILE_POW) - 0.0001;
+            rayXH = player.posX - (player.posY - rayYH) * invTan;
+            distH = - (player.posY - rayYH) / Sin;
             dofH = 0;
         }
         else if (Sin > 0.0001) {
             deltaYH = TILE;
             deltaXH = TILE * invTan;
             deltadistH = TILE / Sin;
-            rayYH = ((((int)playerY)>>TILE_POW)<<TILE_POW) + TILE;
-            rayXH = playerX - (playerY - rayYH) * invTan;
-            distH = - (playerY - rayYH) / Sin;
+            rayYH = ((((int)player.posY)>>TILE_POW)<<TILE_POW) + TILE;
+            rayXH = player.posX - (player.posY - rayYH) * invTan;
+            distH = - (player.posY - rayYH) / Sin;
             dofH = 0;
         }
         else {
-            rayXH = playerX;
-            rayYH = playerY;
+            rayXH = player.posX;
+            rayYH = player.posY;
             distH = 10000.0f;
             dofH = DOF;
         }
@@ -872,23 +987,23 @@ void DDA() {
             deltaXV = TILE;
             deltaYV = TILE * Tan;
             deltadistV = TILE / Cos;
-            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) + TILE;
-            rayYV = playerY - (playerX - rayXV) * Tan;
-            distV = - (playerX - rayXV) / Cos;
+            rayXV = ((((int)player.posX)>>TILE_POW)<<TILE_POW) + TILE;
+            rayYV = player.posY - (player.posX - rayXV) * Tan;
+            distV = - (player.posX - rayXV) / Cos;
             dofV = 0;
         }
         else if (Cos < -0.0001) {
             deltaXV = - TILE;
             deltaYV = - TILE * Tan;
             deltadistV = - TILE / Cos;
-            rayXV = ((((int)playerX)>>TILE_POW)<<TILE_POW) - 0.0001;
-            rayYV = playerY - (playerX - rayXV) * Tan;
-            distV = - (playerX - rayXV) / Cos;
+            rayXV = ((((int)player.posX)>>TILE_POW)<<TILE_POW) - 0.0001;
+            rayYV = player.posY - (player.posX - rayXV) * Tan;
+            distV = - (player.posX - rayXV) / Cos;
             dofV = 0;
         }
         else {
-            rayXV = playerX;
-            rayYV = playerY;
+            rayXV = player.posX;
+            rayYV = player.posY;
             distV = 10000.0f;
             dofV = DOF;
         }
@@ -1041,7 +1156,7 @@ void DDA() {
                 render_info[ray].isdoor = true;
             }
             render_info[ray].dist = distV;
-            render_info[ray].l_height = (float)(TILE * HEIGHT) / distV / correct_fish;
+            render_info[ray].l_height = (float)(pla_sep_scaled * HEIGHT) / distV / correct_fish;
             render_info[ray].rayY = rayYV;
             render_info[ray].rayX = rayXV;
         }
@@ -1072,7 +1187,7 @@ void DDA() {
                 render_info[ray].isdoor = true;
             }
             render_info[ray].dist = distH;
-            render_info[ray].l_height = (float)(TILE * HEIGHT) / distH / correct_fish;
+            render_info[ray].l_height = (float)(pla_sep_scaled * HEIGHT)/ distH / correct_fish;
             render_info[ray].rayY = rayYH;
             render_info[ray].rayX = rayXH;
         }
@@ -1101,7 +1216,7 @@ void doorf() {
         }
         else if (door->wait > 0)
             door->wait -= 1 * delta_frames / 15;
-        else if ((((int)playerX)>>TILE_POW) != door->x || (((int)playerY)>>TILE_POW) != door->y) {
+        else if ((((int)player.posX)>>TILE_POW) != door->x || (((int)player.posY)>>TILE_POW) != door->y) {
             door->exte += door->exte_rate * delta_frames / MS_PER_FRAME;
             if (door->exte > TILE) {
                 door->exte_rate = 0.0;
@@ -1150,16 +1265,21 @@ void display() {
     }
 
     float dlight_map[light_map_length * CHANNELS];
-    for (i=0;i<spritenum;i++) {
-        gen_light(*sprites[i].source, dlight_map);
+    for (i=0;i<ac_light_num;i++) {
+        gen_light(*ac_lights[i].source, dlight_map, false);
         combine_light(brightness, dlight_map);
+        ac_lights[i].direction += ac_lights[i].deltadir * delta_frames + PI;
+        radian_change(&ac_lights[i].direction);
+        movef(PLAYER_SPEED / 4.0, ac_lights[i].direction, &(ac_lights[i].source->posX), &(ac_lights[i].source->posY), ac_lights[i].deltamove);
+        ac_lights[i].direction -= PI;
+        radian_change(&ac_lights[i].direction);
+    }
+    for (i=0;i<sprite_num;i++) {
         sprites[i].direction += sprites[i].deltadir * delta_frames + PI;
         radian_change(&sprites[i].direction);
         movef(PLAYER_SPEED / 4.0, sprites[i].direction, &sprites[i].posX, &sprites[i].posY, sprites[i].deltamove);
         sprites[i].direction -= PI;
         radian_change(&sprites[i].direction);
-        sprites[i].source->posX = sprites[i].posX;
-        sprites[i].source->posY = sprites[i].posY;
     }
 
     DDA();
@@ -1222,34 +1342,35 @@ void keyup(unsigned char key, int x, int y) {
 }
 
 void initmap(FILE* fptr) {
+    exit_level = -1;
     int mapXY[2];
     parsel(fptr, 2, mapXY, -1);
     mapX = mapXY[0];
     mapY = mapXY[1];
     light_map_length = mapX * mapY * (TILE / LIGHT_GRID) * (TILE / LIGHT_GRID);
     map = malloc(sizeof(int) * mapX * mapY);
+    exit_level++;
     if (map == NULL) {
-        exitmap(0);
-        exit(0);
+        exit(1);
     }
     visible = calloc(mapX * mapY, sizeof(bool));
+    exit_level++;
     if (visible == NULL) {
-        exitmap(1);
         exit(1);
     }
     expandable = calloc(mapX * mapY, sizeof(bool));
+    exit_level++;
     if (expandable == NULL) {
-        exitmap(2);
         exit(1);
     }
     stationary = calloc(light_map_length * CHANNELS, sizeof(float));
+    exit_level++;
     if (stationary == NULL) {
-        exitmap(3);
         exit(1);
     }
     brightness = calloc(light_map_length * CHANNELS, sizeof(float));
+    exit_level++;
     if (brightness == NULL) {
-        exitmap(4);
         exit(1);
     }
     int mapline[mapXY[1]];
@@ -1278,10 +1399,14 @@ void initmap(FILE* fptr) {
 			    doornum++;
         }
     }
-    vert = malloc((vnum + 4) * sizeof(fpoint));
     doors = malloc(sizeof(*doors) * doornum);
+    exit_level++;
     if (doors == NULL) {
-        exitmap(5);
+        exit(1);
+    }
+    vert = malloc((vnum + 4) * sizeof(fpoint));
+    exit_level++;
+    if (doors == NULL) {
         exit(1);
     }
     doornum = 0;
@@ -1334,9 +1459,9 @@ void initmap(FILE* fptr) {
 
     int playerXYA[3];
     parsel(fptr, 3, playerXYA, -1);
-    playerX = playerXYA[0];
-    playerY = playerXYA[1];
-    playerAngle = playerXYA[2] / 50.0 * PI;
+    player.posX = playerXYA[0];
+    player.posY = playerXYA[1];
+    player.angle = playerXYA[2] / 50.0 * PI;
     parsel(fptr, 3, intamb, 0);
     int fogse[2];
     parsel(fptr, 2, fogse, -1);
@@ -1352,7 +1477,6 @@ void initmap(FILE* fptr) {
     parsel(fptr, 1, lightnum, -1);
 
     light_source stat_light;
-    stat_light.is_static = 1;
     float init_light_map[light_map_length * CHANNELS];
 
     int lightslocal[lightnum[0]][6];
@@ -1364,7 +1488,7 @@ void initmap(FILE* fptr) {
         stat_light.r = lightslocal[i][3] / 255.0;
         stat_light.g = lightslocal[i][4] / 255.0;
         stat_light.b = lightslocal[i][5] / 255.0;
-        gen_light(stat_light, init_light_map);
+        gen_light(stat_light, init_light_map, true);
         combine_light(stationary, init_light_map);
     }
     for (i=0;i<light_map_length;i++) {
@@ -1374,36 +1498,55 @@ void initmap(FILE* fptr) {
     }
     combine_light(stationary, init_light_map);
 
+    int acl_num[1];
+    parsel(fptr, 1, acl_num, -1);
+    ac_light_num = acl_num[0];
+
+    ac_lights = malloc(sizeof(*ac_lights) * ac_light_num);
+    exit_level++;
+    if (ac_lights == NULL) {
+        exit(1);
+    }
+    lights = malloc(sizeof(*lights) * ac_light_num);
+    exit_level++;
+    if (lights == NULL) {
+        exit(1);
+    }
+    int acl_info[ac_light_num][9];
+    for (i=0;i<ac_light_num;i++) {
+        parsel(fptr, 9, acl_info[i], 6);
+        ac_lights[i].direction = acl_info[i][2] / 50.0 * PI;
+        ac_lights[i].deltadir = acl_info[i][3] / 50000.0 * PI;
+        ac_lights[i].deltamove = acl_info[i][4] / 100.0;
+        ac_lights[i].source = &lights[i];
+        ac_lights[i].source->posX = acl_info[i][0];
+        ac_lights[i].source->posY = acl_info[i][1];
+        ac_lights[i].source->intens = acl_info[i][5];
+        ac_lights[i].source->r = acl_info[i][6] / 255.0;
+        ac_lights[i].source->g = acl_info[i][7] / 255.0;
+        ac_lights[i].source->b = acl_info[i][8] / 255.0;
+    }
+
     int spr_num[1];
     parsel(fptr, 1, spr_num, -1);
-    spritenum = spr_num[0];
+    sprite_num = spr_num[0];
 
-    sprites = malloc(sizeof(*sprites) * spritenum);
+    sprites = malloc(sizeof(*sprites) * sprite_num);
+    exit_level++;
     if (sprites == NULL) {
-        exitmap(6);
         exit(1);
     }
-    lights = malloc(sizeof(*lights) * spritenum);
-    if (lights == NULL) {
-        exitmap(7);
-        exit(1);
-    }
-    int spriteinfo[spritenum][9];
-    for (i=0;i<spritenum;i++) {
-        parsel(fptr, 9, spriteinfo[i], 6);
+    int spriteinfo[sprite_num][5];
+    for (i=0;i<sprite_num;i++) {
+        parsel(fptr, 6, spriteinfo[i], -1);
         sprites[i].posX = spriteinfo[i][0];
         sprites[i].posY = spriteinfo[i][1];
         sprites[i].direction = spriteinfo[i][2] / 50.0 * PI;
         sprites[i].deltadir = spriteinfo[i][3] / 50000.0 * PI;
         sprites[i].deltamove = spriteinfo[i][4] / 100.0;
-        sprites[i].source = &lights[i];
-        sprites[i].source->posX = spriteinfo[i][0];
-        sprites[i].source->posY = spriteinfo[i][1];
-        sprites[i].source->intens = spriteinfo[i][5];
-        sprites[i].source->r = spriteinfo[i][6] / 255.0;
-        sprites[i].source->g = spriteinfo[i][7] / 255.0;
-        sprites[i].source->b = spriteinfo[i][8] / 255.0;
     }
+
+
 
     /*
     printf("%d %d\n", mapXY[0], mapXY[1]);
@@ -1448,23 +1591,29 @@ void init() {
         exit(1);
     }
     float base_angle = 0.5 * PI - SHIFT;
-    radian_change(&base_angle);
+    //radian_change(&base_angle);
     float baseCos = cos(base_angle);
     float side = RES * sin(base_angle) / sin(FOV);
+    pla_sep = side * sin(base_angle);
+    pla_sep_scaled = pla_sep / MAGIC;
+    //printf("RES %d side %f pla_sep %f\n", RES, side, pla_sep);
+    floor_const = HEIGHT / 2 * pla_sep_scaled; // HEIGHT / 2 is the camera height
     int i;
     for (i=0; i<RES; i++)
-        angles[i] = acos((side - i * baseCos) / sqrt(side * side + i * i - 2 * side * i * baseCos));
+        angles[i] = acos((side - i * baseCos) / sqrt(SQR(side) + SQR(i) - 2 * side * i * baseCos));
 }
 
 int main(int argc, char* argv[]) {
+    if (atexit(exitmap))
+        return EXIT_FAILURE;
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize((RES - 2) * SCALE, (HEIGHT - 2) * FLOOR_SCALE);
     glutCreateWindow("Raycaster");
     init();
-    glutCloseFunc(finalexit);
     glutDisplayFunc(display);
     glutKeyboardFunc(keydown);
     glutKeyboardUpFunc(keyup);
     glutMainLoop();
+    return EXIT_SUCCESS;
 }

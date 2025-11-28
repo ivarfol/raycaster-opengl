@@ -1,5 +1,4 @@
-#include <stdio.h>
-#include <GL/glut.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
@@ -32,9 +31,7 @@ interp interpolate(point p0, point p1) {
     double dx = (p0.x - p1.x) / (double)(p0.y - p1.y);
     for (i=0;i<out.length;i++) {
         out.ptrx[i] = (int)round(p0.x + dx * i);
-        //printf("%d %d\n", out.ptrx[i], i);
     }
-    //printf("%d %f %d\n", out.length, dx, i);
     return out;
 }
 
