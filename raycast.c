@@ -9,11 +9,9 @@
 #define SCALE 4
 #define HEIGHT 512
 
-#define FLOOR_SCALE 1
+#define PLAYER_HEIGHT (HEIGHT / 2)
 
-#define PLHEIGHT 32
-
-#define FOV 0.5 * PI
+#define FOV (0.5 * PI)
 #define SHIFT (FOV / 2)
 
 #define MAP_SCALE 16
@@ -40,9 +38,9 @@
 #define INVIS_G 0
 #define INVIS_B 0
 
-#define SQR(a) ((a)*(a))
-
 #define MAGIC (HEIGHT / SCALE / 64)
+
+#define SQR(a) ((a)*(a))
 
 extern int parse(FILE* fptr, float texture[][CHANNELS]);
 extern void parsel(FILE* fptr, int num, int out[], int color_pos);
@@ -134,6 +132,7 @@ typedef struct {
     float direction;
     float deltadir;
     float deltamove;
+    float (*texture)[TEXWIDTH * TEXHEIGHT][CHANNELS];
 } sprite_struct;
 sprite_struct *sprites;
 
@@ -387,7 +386,6 @@ void gen_light(light_source light, float light_map[], bool is_static) {
     int startY, endY;
     float max_dist = sqrt(light.intens / MIN_BRIGHTNESS);
     startX = (int)(light.posX- max_dist)>>LIGHT_POW;
-    //printf("stxb %d\n", startX<<LIGHT_POW);
     if (startX < 0)
         startX = 0;
     endX = (int)(light.posX+ max_dist)>>LIGHT_POW;
@@ -411,7 +409,6 @@ void gen_light(light_source light, float light_map[], bool is_static) {
             light_map[i * CHANNELS + color] = 0;
         }
     }
-
 
     vert[vnum-1].x = startX<<LIGHT_POW;
     vert[vnum-1].y = endY<<LIGHT_POW;
@@ -489,7 +486,6 @@ void gen_light(light_source light, float light_map[], bool is_static) {
         filled_tr(interv, shadow, mapX*(TILE/LIGHT_GRID));
         lastisone = false;
     }
-    //printf("vnumaf %d\nlastisone %d\n", vnumaf, lastisone);
     if (lastisone)
         interv[1] = startp;
     else
@@ -517,17 +513,6 @@ void gen_light(light_source light, float light_map[], bool is_static) {
             }
         }
     }
-    /*
-    if (newkeys.l) {
-        for (tileY = 0; tileY < mapY * (TILE / LIGHT_GRID);tileY++) {
-            for (tileX = 0; tileX < mapX * (TILE / LIGHT_GRID);tileX++) {
-                printf("%0.2f ", light.light_map[tileY  * CHANNELS + mapY * (TILE / LIGHT_GRID) + tileX]);
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    */
 }
 
 void combine_light(float light_one[], float light_two[]) {
@@ -537,9 +522,7 @@ void combine_light(float light_one[], float light_two[]) {
             light_one[i * CHANNELS + color] += light_two[i * CHANNELS + color];
             if (light_one[i * CHANNELS + color] > 1)
                 light_one[i * CHANNELS + color] = 1;
-            //printf("%0.2f ", light_one[i][color]);
         }
-        //printf("\n");
     }
 }
 
@@ -730,16 +713,6 @@ void render() {
             glVertex2i(render_infoP->rayX / TILE * MAP_SCALE, render_infoP->rayY / TILE * MAP_SCALE);
             glEnd();
         }
-        /*
-        for (i=0;i<vnum;i++) {
-            glColor3f(0, 1, 0);
-            glLineWidth(1);
-            glBegin(GL_LINES);
-            glVertex2i(224.0 / TILE * MAP_SCALE, 161.0 / TILE * MAP_SCALE);
-            glVertex2i((float)(vert[i].x) / TILE * MAP_SCALE, (float)(vert[i].y) / TILE * MAP_SCALE);
-            glEnd();
-        }
-        */
 
         deltatextureY = TEXHEIGHT / render_infoP->l_height;
         offset = 0.0f;
@@ -862,8 +835,6 @@ void render() {
             spr_hpos = pla_sep * tan(delta_angle) + RES / 2 - width / 2;
             delta_angle += 0.5 * PI;
             if (delta_angle > PI && spr_hpos < RES && spr_hpos + width > 0) {
-                //printf("%f %f %f %f %f\n", spr_angle, spr_hpos, delta_angle, height, spr_dist[i].dist);
-                //printf("%d %d %f %f\n", TILE, HEIGHT, spr_dist[i].dist, height);
                 deltatextureY = TEXHEIGHT / height;
                 offset = 0.0f;
                 if (height > HEIGHT) {
@@ -888,7 +859,6 @@ void render() {
                 startLY = sprites[spr_dist[i].index].posY;
                 deltaLX = TILE / width * -sin(player.angle);
                 deltaLY = TILE / width * cos(player.angle);
-                //printf("%f %f\n", deltaLX, deltaLY);
                 startLX -= width * deltaLX / 2;
                 startLY -= width * deltaLY / 2;
                 for (columnX = spr_hpos;columnX < RES && columnX < spr_hpos + width-1;columnX++) {
@@ -897,9 +867,9 @@ void render() {
                         textureY = offset * deltatextureY;
                         for (hposition = start;hposition<end;hposition++) {
                             tex_index= (int)((int)(textureY) * TEXWIDTH + textureX);
-                            r = texture_missing[tex_index][red];
-                            g = texture_missing[tex_index][green];
-                            b = texture_missing[tex_index][blue];
+                            r = (*sprites[spr_dist[i].index].texture)[tex_index][red];
+                            g = (*sprites[spr_dist[i].index].texture)[tex_index][green];
+                            b = (*sprites[spr_dist[i].index].texture)[tex_index][blue];
                             if (!(r == INVIS_R && g == INVIS_G && b == INVIS_B)) {
                                 r *= brightness[br_index * CHANNELS + red];
                                 g *= brightness[br_index * CHANNELS + green];
@@ -920,8 +890,6 @@ void render() {
                     textureX += delta_textureX;
                     startLX += deltaLX;
                     startLY += deltaLY;
-                    if (textureX >= TEXWIDTH)
-                        textureX = TEXWIDTH-1;
                 }
             }
         }
@@ -1112,21 +1080,6 @@ void DDA() {
             else
                 break;
         }
-
-        /*
-        int j;
-        if (newkeys.l) {
-            for (i=0;i<mapY;i++) {
-                for (j=0;j<mapX;j++) {
-                    printf("%b ", visible[i * mapX + j]);
-                }
-                printf("\n");
-            }
-            printf("\n");
-        }
-        */
-
-
 
         int br_offset = 0;
         if (distV <= distH) {
@@ -1512,19 +1465,19 @@ void initmap(FILE* fptr) {
     if (lights == NULL) {
         exit(1);
     }
-    int acl_info[ac_light_num][9];
+    int acl_info[9];
     for (i=0;i<ac_light_num;i++) {
-        parsel(fptr, 9, acl_info[i], 6);
-        ac_lights[i].direction = acl_info[i][2] / 50.0 * PI;
-        ac_lights[i].deltadir = acl_info[i][3] / 50000.0 * PI;
-        ac_lights[i].deltamove = acl_info[i][4] / 100.0;
+        parsel(fptr, 9, acl_info, 6);
+        ac_lights[i].direction = acl_info[2] / 50.0 * PI;
+        ac_lights[i].deltadir = acl_info[3] / 50000.0 * PI;
+        ac_lights[i].deltamove = acl_info[4] / 100.0;
         ac_lights[i].source = &lights[i];
-        ac_lights[i].source->posX = acl_info[i][0];
-        ac_lights[i].source->posY = acl_info[i][1];
-        ac_lights[i].source->intens = acl_info[i][5];
-        ac_lights[i].source->r = acl_info[i][6] / 255.0;
-        ac_lights[i].source->g = acl_info[i][7] / 255.0;
-        ac_lights[i].source->b = acl_info[i][8] / 255.0;
+        ac_lights[i].source->posX = acl_info[0];
+        ac_lights[i].source->posY = acl_info[1];
+        ac_lights[i].source->intens = acl_info[5];
+        ac_lights[i].source->r = acl_info[6] / 255.0;
+        ac_lights[i].source->g = acl_info[7] / 255.0;
+        ac_lights[i].source->b = acl_info[8] / 255.0;
     }
 
     int spr_num[1];
@@ -1536,35 +1489,19 @@ void initmap(FILE* fptr) {
     if (sprites == NULL) {
         exit(1);
     }
-    int spriteinfo[sprite_num][5];
+    int spriteinfo[6];
     for (i=0;i<sprite_num;i++) {
-        parsel(fptr, 6, spriteinfo[i], -1);
-        sprites[i].posX = spriteinfo[i][0];
-        sprites[i].posY = spriteinfo[i][1];
-        sprites[i].direction = spriteinfo[i][2] / 50.0 * PI;
-        sprites[i].deltadir = spriteinfo[i][3] / 50000.0 * PI;
-        sprites[i].deltamove = spriteinfo[i][4] / 100.0;
+        parsel(fptr, 6, spriteinfo, -1);
+        sprites[i].posX = spriteinfo[0];
+        sprites[i].posY = spriteinfo[1];
+        sprites[i].direction = spriteinfo[2] / 50.0 * PI;
+        sprites[i].deltadir = spriteinfo[3] / 50000.0 * PI;
+        sprites[i].deltamove = spriteinfo[4] / 100.0;
+        if (spriteinfo[5] == 0)
+            sprites[i].texture = &texture_one;
+        else
+            sprites[i].texture = &texture_missing;
     }
-
-
-
-    /*
-    printf("%d %d\n", mapXY[0], mapXY[1]);
-    for (i=0;i<mapXY[1];i++) {
-        for (j=0;j<mapXY[0];j++)
-            printf("%d ", map[i*mapXY[0] + j]);
-        printf("\n");
-    }
-    printf("%d %d %d\n", intamb[0], intamb[1], intamb[2]);
-    printf("%d %d\n", fogse[0], fogse[1]);
-    printf("%d %d %d\n", intfog[0], intfog[1], intfog[2]);
-    printf("%d\n", lightnum[0]);
-    for (i=0;i<lightnum[0];i++)
-        printf("%d %d %d %d %d %d\n", lightslocal[i][0], lightslocal[i][1], lightslocal[i][2], lightslocal[i][3], lightslocal[i][4], lightslocal[i][5]);
-    printf("%d\n", spr_num[0]);
-    for (i=0;i<spr_num[0];i++)
-        printf("%d %d %d %d %d %d %d\n", spriteinfo[i][0], spriteinfo[i][1], spriteinfo[i][2], spriteinfo[i][3], spriteinfo[i][4], spriteinfo[i][5], spriteinfo[i][6]);
-    */
 }
 
 void init() {
@@ -1577,7 +1514,7 @@ void init() {
     initmap(fptr);
     fptr = NULL;
     glClearColor(0.3,0.3,0.3,0);
-    gluOrtho2D(0,(RES - 2)*SCALE,(HEIGHT - 2)*FLOOR_SCALE,0);
+    gluOrtho2D(0,(RES - 2)*SCALE,(HEIGHT - 2),0);
 
     genmissing();
 
@@ -1596,8 +1533,7 @@ void init() {
     float side = RES * sin(base_angle) / sin(FOV);
     pla_sep = side * sin(base_angle);
     pla_sep_scaled = pla_sep / MAGIC;
-    //printf("RES %d side %f pla_sep %f\n", RES, side, pla_sep);
-    floor_const = HEIGHT / 2 * pla_sep_scaled; // HEIGHT / 2 is the camera height
+    floor_const = PLAYER_HEIGHT * pla_sep_scaled; // HEIGHT / 2 is the camera height
     int i;
     for (i=0; i<RES; i++)
         angles[i] = acos((side - i * baseCos) / sqrt(SQR(side) + SQR(i) - 2 * side * i * baseCos));
@@ -1608,7 +1544,7 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize((RES - 2) * SCALE, (HEIGHT - 2) * FLOOR_SCALE);
+    glutInitWindowSize((RES - 2) * SCALE, (HEIGHT - 2));
     glutCreateWindow("Raycaster");
     init();
     glutDisplayFunc(display);
