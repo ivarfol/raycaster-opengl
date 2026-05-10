@@ -1,12 +1,21 @@
 #include <stdio.h>
 
+#define CHANNELS 3
 #define HEIGHT 64
 #define WIDTH 64
 #define SEP 0x0A
 #define MAXL 128
 
-enum colors { red, green, blue };
+enum { red, green, blue };
 
+/*
+raises an integer num to the pow
+params
+num - number to raise
+pow - the power
+return
+num_in_pow - the number to the power
+*/
 int ipow(int num, int pow) {
     int num_in_pow = 1;
     for (;pow>0;pow--)
@@ -14,6 +23,13 @@ int ipow(int num, int pow) {
     return num_in_pow;
 }
 
+/*
+converts the raw data to integers
+params
+text[MAXL] - the input string
+return
+num - the number generated
+*/
 int stoi(char text[MAXL]) {
     int num=0, i, j;
     for (i=0;i<MAXL && text[i]!='\0';i++);
@@ -22,7 +38,16 @@ int stoi(char text[MAXL]) {
     return num;
 }
 
-int parse(FILE* fptr, float texture[][3]) {
+/*
+parses the texture file
+params
+fptr - the input file
+texture[][CHANNELS]
+return
+1 if error
+0 - if fine
+*/
+int parse(FILE* fptr, float texture[][CHANNELS]) {
     int c;
     int line, symbol, depth;
     int Ylength = 0;
@@ -69,7 +94,7 @@ int parse(FILE* fptr, float texture[][3]) {
     }
     int colorn, color_part;
     for (colorn=0;colorn<HEIGHT * WIDTH;colorn++) {
-        for (color_part=red;color_part<=blue;color_part++) {
+        for (color_part=red;color_part<CHANNELS;color_part++) {
             c = fgetc(fptr);
             if (c == EOF) {
                 printf("Unexpected EOF\n");

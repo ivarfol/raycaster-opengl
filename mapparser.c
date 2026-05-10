@@ -5,8 +5,16 @@
 #define MAXL 128
 #define MAXNL 8
 
-enum colors { red, green, blue };
+enum { red, green, blue };
 
+/*
+raises an integer num to the pow
+params
+num - number to raise
+pow - the power
+return
+num_in_pow - the number to the power
+*/
 int intpow(int num, int pow) {
     int num_in_pow = 1;
     for (;pow>0;pow--)
@@ -14,6 +22,15 @@ int intpow(int num, int pow) {
     return num_in_pow;
 }
 
+/*
+converts string to number
+params
+text[MAXNL] - the input string
+base - the base (dec/hex)
+*fail - flag to set to true if the string is invalid
+return
+num - the number generated
+*/
 int stoint(char text[MAXNL], int base, bool *fail) {
     int num = 0, i, j;
     for (i=0;i<MAXL && text[i]!='\0';i++);
@@ -34,6 +51,15 @@ int stoint(char text[MAXNL], int base, bool *fail) {
     return num;
 }
 
+/*
+parses a line, ignores comments, returns an array of integers
+params
+*fptr - the pointer to the file
+num - expected number of numbers
+out[] - the array to write the numbers to
+color_pos - the position of the colors (three hex numbers without spaces)
+return
+*/
 void parsel(FILE* fptr, int num, int out[], int color_pos) {
     int symbol = 0, wordnum = 0, offset = 0;
     char c = ' ', lc, word[MAXNL];

@@ -14,8 +14,13 @@
 
 float noise[HEIGHT * WIDTH] = {0};
 
-enum colors { red, green, blue };
+enum { red, green, blue };
 
+/*
+generates a random noise
+params
+return
+*/
 void gen_noise() {
     int i, j;
     for (i=0;i<HEIGHT;i++) {
@@ -24,6 +29,15 @@ void gen_noise() {
     }
 }
 
+/*
+2D interpolation
+params
+x - x position to generate
+y - y position to generate
+zoom - the zoom factor
+return
+val - the interpolated value for the position
+*/
 double smooth_noise(double x, double y, double zoom) {
     double fractX = x - (int)(x);
     double fractY = y - (int)(y);
@@ -43,6 +57,14 @@ double smooth_noise(double x, double y, double zoom) {
     return val;
 }
 
+/*
+zooms, interpolates and takes the averege of the value at the position
+params
+x - x position
+y - y position
+size - 2^number of iterations
+val - the final value for the position
+*/
 double turbulence(double x, double y, double size) {
     double val = 0.0;
     double initial_size = size;
@@ -54,6 +76,12 @@ double turbulence(double x, double y, double size) {
     return val / initial_size / 2.0;
 }
 
+/*
+generates a marble texture with a sin function and the noise
+params
+texture[][CHANNELS] - the texture to write to
+return
+*/
 void genmarble(float texture[][CHANNELS]) {
     gen_noise();
     double sineValue, xyValue;

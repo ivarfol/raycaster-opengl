@@ -5,9 +5,10 @@
 !racast.c
 !ppmparser.c
 !mapparser.c
-!missing.ppm
+!triangle.c
+!gen_marble.c
+!main.h
+!triangle.h
 !ray
 !ray.exe
 !tile.ppm
-!tri.c
-!gen_marble.c
